@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -68,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -105,6 +107,35 @@ fun HomeScreen(
     var newFolderName by remember { mutableStateOf("") }
     var renamingDoc by remember { mutableStateOf<DocumentEntity?>(null) }
     var renameInput by remember { mutableStateOf("") }
+    var showEmptyTrashDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showEmptyTrashDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashDialog = false },
+            title = { Text("Vaciar papelera") },
+            text = {
+                Text("Se eliminarán ${documents.size} documento(s) y sus páginas escaneadas de forma permanente. Esta acción no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEmptyTrashDialog = false
+                        viewModel.emptyTrash { deleted ->
+                            Toast.makeText(
+                                context,
+                                if (deleted > 0) "Papelera vaciada: $deleted documento(s) eliminados" else "La papelera ya estaba vacía",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                ) { Text("Eliminar todo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -526,11 +557,26 @@ fun HomeScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = "${documents.size} doc${if (documents.size != 1) "s" else ""}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${documents.size} doc${if (documents.size != 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (selectedTab == LibraryTab.TRASH && documents.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = { showEmptyTrashDialog = true },
+                            modifier = Modifier.testTag("empty_trash_button")
+                        ) {
+                            Text(
+                                text = "Vaciar papelera",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
             }
         }
 

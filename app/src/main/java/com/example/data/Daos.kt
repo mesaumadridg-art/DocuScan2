@@ -40,6 +40,9 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE isTrash = 1 ORDER BY updatedAt DESC")
     fun getTrashDocuments(): Flow<List<DocumentEntity>>
 
+    @Query("SELECT * FROM documents WHERE isTrash = 1")
+    suspend fun getTrashDocumentsList(): List<DocumentEntity>
+
     @Query("""
         SELECT * FROM documents 
         WHERE isTrash = 0 AND (title LIKE '%' || :query || '%' OR combinedOcrText LIKE '%' || :query || '%')

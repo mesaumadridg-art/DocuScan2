@@ -350,8 +350,18 @@ class DocumentRepository(
         docDao.deleteDocument(doc)
     }
 
-    suspend fun emptyTrash() = withContext(Dispatchers.IO) {
+    suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
+        val trashed = docDao.getTrashDocumentsList()
+        for (doc in trashed) {
+            val pages = pageDao.getPagesListForDocument(doc.id)
+            for (p in pages) {
+                fileManager.deleteFile(p.originalImagePath)
+                fileManager.deleteFile(p.processedImagePath)
+            }
+            fileManager.deleteFile(doc.pdfPath)
+        }
         docDao.emptyTrash()
+        trashed.size
     }
 
     suspend fun createFolder(name: String, colorHex: String = "#0C4A60"): Long {

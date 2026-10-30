@@ -10,6 +10,10 @@
         android:required="false" />
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Solo Android 7-9: guardar en Descargas/Galería vía MediaStore exige este permiso -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:name=".DocuScanApp"

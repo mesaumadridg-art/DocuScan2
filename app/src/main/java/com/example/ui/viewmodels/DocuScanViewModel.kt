@@ -145,6 +145,13 @@ class DocuScanViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun emptyTrash(onResult: ((Int) -> Unit)? = null) {
+        viewModelScope.launch {
+            val deleted = repository.emptyTrash()
+            onResult?.invoke(deleted)
+        }
+    }
+
     fun createFolder(name: String) {
         viewModelScope.launch {
             repository.createFolder(name)
@@ -397,6 +404,11 @@ class DocuScanViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             preferencesManager.setFileNamePrefix(prefix)
         }
+    }
+
+    override fun onCleared() {
+        ocrManager.close()
+        super.onCleared()
     }
 }
 

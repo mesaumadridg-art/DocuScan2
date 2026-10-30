@@ -2,5 +2,5 @@
   "name": "DocuScan",
   "description": "Escanea, organiza y comparte documentos con escáner, OCR, filtros y PDF",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

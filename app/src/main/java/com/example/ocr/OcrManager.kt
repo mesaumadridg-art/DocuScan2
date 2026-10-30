@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.widget.Toast
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
@@ -25,16 +26,27 @@ data class OcrResult(
 
 class OcrManager(private val context: Context) {
 
-    private val recognizer by lazy {
-        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var recognizerInstance: TextRecognizer? = null
+
+    private fun recognizer(): TextRecognizer =
+        recognizerInstance ?: TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            .also { recognizerInstance = it }
+
+    /** Libera el modelo de ML Kit cuando el ViewModel dueño muere. */
+    fun close() {
+        recognizerInstance?.close()
+        recognizerInstance = null
     }
 
+    // 30 s: una página con mucho texto en un equipo lento tarda más que el timeout anterior (2,5 s)
+    private val recognitionTimeoutMs = 30_000L
+
     suspend fun recognizeTextFromBitmap(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        val result = withTimeoutOrNull(2500L) {
+        val result = withTimeoutOrNull(recognitionTimeoutMs) {
             suspendCancellableCoroutine { continuation ->
                 try {
                     val inputImage = InputImage.fromBitmap(bitmap, 0)
-                    recognizer.process(inputImage)
+                    recognizer().process(inputImage)
                         .addOnSuccessListener { visionText ->
                             if (continuation.isActive) {
                                 val text = visionText.text.trim()

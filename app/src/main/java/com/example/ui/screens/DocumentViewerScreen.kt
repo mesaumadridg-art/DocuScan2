@@ -88,6 +88,7 @@ import coil.compose.AsyncImage
 import com.example.data.DocumentEntity
 import com.example.data.PageEntity
 import com.example.imaging.QuadCorners
+import com.example.ui.util.rememberStoragePermissionGate
 import com.example.ui.viewmodels.DocuScanViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -218,6 +219,7 @@ fun DocumentViewerScreen(
     var exportSinglePageOnly by remember { mutableStateOf(false) }
     var shareSinglePageOnly by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
+    val withStoragePermission = rememberStoragePermissionGate()
 
     // Dialog for exporting/downloading in multiple formats
     if (showExportDialog) {
@@ -310,8 +312,9 @@ fun DocumentViewerScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        isExporting = true
-                        viewModel.exportDocument(
+                        withStoragePermission {
+                            isExporting = true
+                            viewModel.exportDocument(
                             document = currentDoc,
                             format = selectedExportFormat,
                             singlePageOnly = exportSinglePageOnly,
@@ -319,7 +322,8 @@ fun DocumentViewerScreen(
                         ) { success, message ->
                             isExporting = false
                             showExportDialog = false
-                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                            }
                         }
                     },
                     enabled = !isExporting,

@@ -244,4 +244,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    override fun onCleared() {
+        ocrManager.close()
+        super.onCleared()
+    }
 }
