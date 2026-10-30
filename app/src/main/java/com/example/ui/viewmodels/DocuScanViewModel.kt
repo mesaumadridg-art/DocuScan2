@@ -175,6 +175,171 @@ class DocuScanViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun downloadPdfToDevice(document: DocumentEntity, onResult: (Boolean, String) -> Unit) {
+        exportDocument(document, com.example.data.ExportFormat.PDF, false, 0, onResult)
+    }
+
+    fun exportDocument(
+        document: DocumentEntity,
+        format: com.example.data.ExportFormat,
+        singlePageOnly: Boolean = false,
+        currentPageIndex: Int = 0,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                when (format) {
+                    com.example.data.ExportFormat.PDF -> {
+                        val file = getOrGeneratePdfFile(document)
+                        if (file != null && file.exists()) {
+                            val uri = repository.exportPdfToDownloads(file, document.title)
+                            if (uri != null) {
+                                onResult(true, "PDF guardado en la carpeta Descargas")
+                            } else {
+                                onResult(false, "No se pudo guardar en Descargas")
+                            }
+                        } else {
+                            onResult(false, "Archivo PDF no disponible")
+                        }
+                    }
+
+                    com.example.data.ExportFormat.JPG,
+                    com.example.data.ExportFormat.PNG -> {
+                        val isPng = format == com.example.data.ExportFormat.PNG
+                        val pages = repository.getPagesList(document.id)
+                        if (pages.isEmpty()) {
+                            onResult(false, "No hay páginas para exportar")
+                            return@launch
+                        }
+
+                        if (singlePageOnly) {
+                            val targetPage = pages.getOrNull(currentPageIndex) ?: pages.first()
+                            val bmp = fileManager.loadBitmapFromFile(targetPage.processedImagePath)
+                            if (bmp != null) {
+                                val uri = repository.exportImageToGallery(bmp, document.title, isPng, currentPageIndex)
+                                if (uri != null) {
+                                    val ext = if (isPng) "PNG" else "JPG"
+                                    onResult(true, "Página guardada en Fotos/Galería ($ext)")
+                                } else {
+                                    onResult(false, "No se pudo guardar la imagen")
+                                }
+                            } else {
+                                onResult(false, "No se pudo cargar la imagen de la página")
+                            }
+                        } else {
+                            val uris = repository.exportAllPagesAsImages(pages, document.title, isPng)
+                            if (uris.isNotEmpty()) {
+                                val ext = if (isPng) "PNG" else "JPG"
+                                onResult(true, "${uris.size} páginas guardadas en Fotos/Galería ($ext)")
+                            } else {
+                                onResult(false, "No se pudieron guardar las imágenes")
+                            }
+                        }
+                    }
+
+                    com.example.data.ExportFormat.TXT -> {
+                        var text = document.combinedOcrText
+                        if (text.isNullOrBlank()) {
+                            val pages = repository.getPagesList(document.id)
+                            val sb = StringBuilder()
+                            for (p in pages) {
+                                if (!p.ocrText.isNullOrBlank()) {
+                                    sb.append(p.ocrText).append("\n\n")
+                                } else {
+                                    val bmp = fileManager.loadBitmapFromFile(p.processedImagePath)
+                                    if (bmp != null) {
+                                        val res = ocrManager.recognizeTextFromBitmap(bmp)
+                                        if (res.fullText.isNotBlank()) {
+                                            sb.append(res.fullText).append("\n\n")
+                                        }
+                                    }
+                                }
+                            }
+                            text = sb.toString().trim()
+                        }
+
+                        if (text.isNotBlank()) {
+                            val uri = repository.exportTextToDownloads(text, document.title)
+                            if (uri != null) {
+                                onResult(true, "Texto OCR guardado en Descargas (.txt)")
+                            } else {
+                                onResult(false, "No se pudo guardar el archivo de texto")
+                            }
+                        } else {
+                            onResult(false, "No hay texto detectado para exportar como .txt")
+                        }
+                    }
+
+                    com.example.data.ExportFormat.ZIP -> {
+                        val pages = repository.getPagesList(document.id)
+                        if (pages.isEmpty()) {
+                            onResult(false, "No hay páginas para comprimir")
+                            return@launch
+                        }
+                        val uri = repository.exportPagesToZip(pages, document.title, document.combinedOcrText)
+                        if (uri != null) {
+                            onResult(true, "Archivo ZIP con ${pages.size} páginas guardado en Descargas")
+                        } else {
+                            onResult(false, "No se pudo generar el archivo ZIP")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult(false, "Error al exportar: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun shareDocument(
+        document: DocumentEntity,
+        format: com.example.data.ExportFormat,
+        singlePageOnly: Boolean = false,
+        currentPageIndex: Int = 0
+    ) {
+        viewModelScope.launch {
+            try {
+                when (format) {
+                    com.example.data.ExportFormat.PDF -> {
+                        sharePdf(document)
+                    }
+
+                    com.example.data.ExportFormat.JPG,
+                    com.example.data.ExportFormat.PNG -> {
+                        val isPng = format == com.example.data.ExportFormat.PNG
+                        val pages = repository.getPagesList(document.id)
+                        if (pages.isEmpty()) return@launch
+
+                        if (singlePageOnly) {
+                            val targetPage = pages.getOrNull(currentPageIndex) ?: pages.first()
+                            fileManager.shareImages(listOf(targetPage.processedImagePath), isPng, "Compartir imagen con...")
+                        } else {
+                            fileManager.shareImages(pages.map { it.processedImagePath }, isPng, "Compartir páginas con...")
+                        }
+                    }
+
+                    com.example.data.ExportFormat.TXT -> {
+                        val text = document.combinedOcrText
+                        if (!text.isNullOrBlank()) {
+                            fileManager.shareTextFile(text, document.title)
+                        } else {
+                            shareOcrText(document)
+                        }
+                    }
+
+                    com.example.data.ExportFormat.ZIP -> {
+                        val pages = repository.getPagesList(document.id)
+                        if (pages.isNotEmpty()) {
+                            fileManager.shareZipFile(pages, document.title, document.combinedOcrText)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     private suspend fun getOrGeneratePdfFile(document: DocumentEntity): File? {
         val existingPath = document.pdfPath
         if (existingPath != null) {

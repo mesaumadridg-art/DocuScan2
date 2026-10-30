@@ -104,12 +104,9 @@ fun CameraScannerScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            uris.forEach { uri ->
-                scannerViewModel.importImageFromUri(uri) {
-                    // imported
-                }
+            scannerViewModel.importImagesFromUris(uris) {
+                onNavigateToEditor()
             }
-            onNavigateToEditor()
         }
     }
 
@@ -399,8 +396,44 @@ fun CameraScannerScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF90E0EF),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 12.dp)
             )
+
+            // Prominent banner showing pages captured and direct button to save/edit
+            AnimatedVisibility(visible = draftPages.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF009688),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp)
+                        .clickable(onClick = onNavigateToEditor)
+                        .testTag("banner_to_editor_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${draftPages.size} ${if (draftPages.size == 1) "página capturada" else "páginas capturadas"}",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Text(
+                            text = "Guardar / Editar ➔",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -445,6 +478,11 @@ fun CameraScannerScreen(
 
                                     override fun onError(exception: ImageCaptureException) {
                                         exception.printStackTrace()
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Error al capturar: ${exception.localizedMessage ?: "Cámara no disponible"}",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             )

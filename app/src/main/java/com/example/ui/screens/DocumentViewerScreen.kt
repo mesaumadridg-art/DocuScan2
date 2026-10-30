@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -50,6 +51,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +62,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.example.data.ExportFormat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -118,6 +121,7 @@ fun DocumentViewerScreen(
     var ocrSearchQuery by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     if (document == null) {
         Box(
@@ -202,6 +206,250 @@ fun DocumentViewerScreen(
             confirmButton = {
                 TextButton(onClick = { showFolderDialog = false }) {
                     Text("Cerrar")
+                }
+            }
+        )
+    }
+
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showShareDialog by remember { mutableStateOf(false) }
+    var selectedExportFormat by remember { mutableStateOf(ExportFormat.PDF) }
+    var selectedShareFormat by remember { mutableStateOf(ExportFormat.PDF) }
+    var exportSinglePageOnly by remember { mutableStateOf(false) }
+    var shareSinglePageOnly by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
+
+    // Dialog for exporting/downloading in multiple formats
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isExporting) showExportDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FileDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Guardar en el Dispositivo", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Selecciona el formato que deseas descargar:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    ExportFormat.entries.forEach { fmt ->
+                        val isSelected = selectedExportFormat == fmt
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { selectedExportFormat = fmt }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF0C4A60).copy(alpha = 0.2f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = fmt.iconLabel,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = fmt.title,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = fmt.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if ((selectedExportFormat == ExportFormat.JPG || selectedExportFormat == ExportFormat.PNG) && pages.size > 1) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Páginas a exportar:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !exportSinglePageOnly,
+                                onClick = { exportSinglePageOnly = false },
+                                label = { Text("Todas (${pages.size})") }
+                            )
+                            FilterChip(
+                                selected = exportSinglePageOnly,
+                                onClick = { exportSinglePageOnly = true },
+                                label = { Text("Solo pág. ${selectedPageIndex + 1}") }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isExporting = true
+                        viewModel.exportDocument(
+                            document = currentDoc,
+                            format = selectedExportFormat,
+                            singlePageOnly = exportSinglePageOnly,
+                            currentPageIndex = selectedPageIndex
+                        ) { success, message ->
+                            isExporting = false
+                            showExportDialog = false
+                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !isExporting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688))
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Guardar ${selectedExportFormat.iconLabel}")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showExportDialog = false },
+                    enabled = !isExporting
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Dialog for sharing in multiple formats
+    if (showShareDialog) {
+        AlertDialog(
+            onDismissRequest = { showShareDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Share, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Compartir Documento", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Selecciona el formato para enviar:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    ExportFormat.entries.forEach { fmt ->
+                        val isSelected = selectedShareFormat == fmt
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { selectedShareFormat = fmt }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF0C4A60).copy(alpha = 0.2f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = fmt.iconLabel,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = fmt.title,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = fmt.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if ((selectedShareFormat == ExportFormat.JPG || selectedShareFormat == ExportFormat.PNG) && pages.size > 1) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Páginas a compartir:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !shareSinglePageOnly,
+                                onClick = { shareSinglePageOnly = false },
+                                label = { Text("Todas (${pages.size})") }
+                            )
+                            FilterChip(
+                                selected = shareSinglePageOnly,
+                                onClick = { shareSinglePageOnly = true },
+                                label = { Text("Solo pág. ${selectedPageIndex + 1}") }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showShareDialog = false
+                        viewModel.shareDocument(
+                            document = currentDoc,
+                            format = selectedShareFormat,
+                            singlePageOnly = shareSinglePageOnly,
+                            currentPageIndex = selectedPageIndex
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60))
+                ) {
+                    Text("Compartir ${selectedShareFormat.iconLabel}")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showShareDialog = false }) {
+                    Text("Cancelar")
                 }
             }
         )
@@ -544,22 +792,38 @@ fun DocumentViewerScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Compartir PDF
+                // Descargar / Exportar en múltiples formatos (PDF, JPG, PNG, TXT, ZIP)
                 Button(
-                    onClick = { viewModel.sharePdf(currentDoc) },
+                    onClick = { showExportDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("download_pdf_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Descargar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Compartir en múltiples formatos (PDF, JPG, PNG, TXT, ZIP)
+                Button(
+                    onClick = { showShareDialog = true },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("share_pdf_button"),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60)),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Compartir PDF", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Compartir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Abrir PDF
@@ -568,12 +832,13 @@ fun DocumentViewerScreen(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("open_pdf_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B4D8)),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Abrir PDF", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Abrir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

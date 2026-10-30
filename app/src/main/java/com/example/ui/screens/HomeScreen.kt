@@ -90,7 +90,8 @@ fun HomeScreen(
     viewModel: DocuScanViewModel,
     onNavigateToScanner: () -> Unit,
     onNavigateToDocument: (Long) -> Unit,
-    onNavigateToTools: () -> Unit
+    onNavigateToTools: () -> Unit,
+    onImportPhotos: (List<android.net.Uri>) -> Unit = {}
 ) {
     val documents by viewModel.documents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -109,7 +110,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            onNavigateToScanner()
+            onImportPhotos(uris)
         }
     }
 

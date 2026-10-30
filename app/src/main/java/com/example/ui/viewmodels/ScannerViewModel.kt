@@ -126,40 +126,45 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun importImageFromUri(uri: Uri, onComplete: () -> Unit) {
+    fun importImagesFromUris(uris: List<Uri>, onComplete: () -> Unit) {
+        if (uris.isEmpty()) return
         _isProcessingCapture.value = true
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val context = getApplication<Application>()
-                val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
+            val newDrafts = mutableListOf<DraftPage>()
+            val context = getApplication<Application>()
+            for (uri in uris) {
+                try {
+                    val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    inputStream?.close()
 
-                if (bitmap != null) {
-                    val detection = EdgeDetector.detectPaperEdges(bitmap)
-                    val draft = DraftPage(
-                        rawBitmap = bitmap,
-                        corners = detection.corners,
-                        isAutoDetected = detection.isDocumentDetected,
-                        detectionMessage = detection.message
-                    )
-                    withContext(Dispatchers.Main) {
-                        _draftPages.value = _draftPages.value + draft
-                        _isProcessingCapture.value = false
-                        onComplete()
+                    if (bitmap != null) {
+                        val detection = EdgeDetector.detectPaperEdges(bitmap)
+                        newDrafts.add(
+                            DraftPage(
+                                rawBitmap = bitmap,
+                                corners = detection.corners,
+                                isAutoDetected = detection.isDocumentDetected,
+                                detectionMessage = detection.message
+                            )
+                        )
                     }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        _isProcessingCapture.value = false
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    _isProcessingCapture.value = false
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
+            withContext(Dispatchers.Main) {
+                if (newDrafts.isNotEmpty()) {
+                    _draftPages.value = _draftPages.value + newDrafts
+                }
+                _isProcessingCapture.value = false
+                onComplete()
+            }
         }
+    }
+
+    fun importImageFromUri(uri: Uri, onComplete: () -> Unit) {
+        importImagesFromUris(listOf(uri), onComplete)
     }
 
     fun updateDraftPage(index: Int, updated: DraftPage) {

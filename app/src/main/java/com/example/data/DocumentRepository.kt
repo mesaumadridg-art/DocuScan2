@@ -362,4 +362,24 @@ class DocumentRepository(
         val doc = docDao.getDocumentById(docId) ?: return
         docDao.updateDocument(doc.copy(folderId = folderId, updatedAt = System.currentTimeMillis()))
     }
+
+    suspend fun exportPdfToDownloads(pdfFile: File, title: String): android.net.Uri? {
+        return fileManager.exportPdfToDownloads(pdfFile, title)
+    }
+
+    suspend fun exportImageToGallery(bitmap: Bitmap, title: String, isPng: Boolean = false, pageIndex: Int? = null): android.net.Uri? {
+        return fileManager.exportImageToGallery(bitmap, title, isPng, pageIndex)
+    }
+
+    suspend fun exportAllPagesAsImages(pages: List<PageEntity>, title: String, isPng: Boolean = false): List<android.net.Uri> {
+        return fileManager.exportAllPagesAsImages(pages, title, isPng)
+    }
+
+    suspend fun exportTextToDownloads(text: String, title: String): android.net.Uri? {
+        return fileManager.exportTextToDownloads(text, title)
+    }
+
+    suspend fun exportPagesToZip(pages: List<PageEntity>, title: String, ocrText: String? = null): android.net.Uri? {
+        return fileManager.exportPagesToZip(pages, title, ocrText)
+    }
 }

@@ -218,6 +218,16 @@ class MainActivity : ComponentActivity() {
                                             },
                                             onNavigateToTools = {
                                                 currentTab = MainNavTab.TOOLS
+                                            },
+                                            onImportPhotos = { uris ->
+                                                scannerViewModel.clearDrafts()
+                                                scannerViewModel.importImagesFromUris(uris) {
+                                                    val drafts = scannerViewModel.draftPages.value
+                                                    if (drafts.isNotEmpty()) {
+                                                        editorViewModel.initDraftPages(drafts)
+                                                        currentDestination = AppDestination.Editor
+                                                    }
+                                                }
                                             }
                                         )
 

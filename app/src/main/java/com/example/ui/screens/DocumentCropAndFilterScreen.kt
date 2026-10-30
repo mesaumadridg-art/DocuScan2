@@ -4,9 +4,9 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.PdfPageSize
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -132,11 +132,20 @@ fun DocumentCropAndFilterScreen(
 
     val currentPage = pages.getOrNull(currentIndex) ?: pages.first()
 
-    // Save Confirmation Dialog
+    var selectedFormat by remember { mutableStateOf(com.example.data.ExportFormat.PDF) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // Save Confirmation Dialog with format options
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { if (!isSaving) showSaveDialog = false },
-            title = { Text("Guardar Documento", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    text = "Guardar Documento",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
             text = {
                 Column {
                     Text(
@@ -154,23 +163,89 @@ fun DocumentCropAndFilterScreen(
                             .testTag("save_doc_title_input")
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Tamaño de página:",
+                        text = "Formato principal de guardado:",
                         style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(PdfPageSize.entries.size) { idx ->
-                            val size = PdfPageSize.entries[idx]
-                            FilterChip(
-                                selected = selectedPageSize == size,
-                                onClick = { selectedPageSize = size },
-                                label = { Text(size.displayName, fontSize = 12.sp) }
+                        listOf(
+                            com.example.data.ExportFormat.PDF,
+                            com.example.data.ExportFormat.JPG,
+                            com.example.data.ExportFormat.PNG
+                        ).forEach { fmt ->
+                            val isSelected = selectedFormat == fmt
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Color(0xFF0C4A60) else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { selectedFormat = fmt }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = fmt.iconLabel,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = when (fmt) {
+                                            com.example.data.ExportFormat.PDF -> "Documento"
+                                            com.example.data.ExportFormat.JPG -> "Comprimido"
+                                            com.example.data.ExportFormat.PNG -> "Sin pérdida"
+                                            else -> ""
+                                        },
+                                        fontSize = 10.sp,
+                                        color = if (isSelected) Color(0xFF80DEEA) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedFormat == com.example.data.ExportFormat.PDF) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Tamaño de página:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(PdfPageSize.entries.size) { idx ->
+                                val size = PdfPageSize.entries[idx]
+                                FilterChip(
+                                    selected = selectedPageSize == size,
+                                    onClick = { selectedPageSize = size },
+                                    label = { Text(size.displayName, fontSize = 12.sp) }
+                                )
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF009688).copy(alpha = 0.12f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "El documento se guardará en DocuScan y las páginas se exportarán directamente a tu Galería/Fotos como imágenes ${selectedFormat.iconLabel}.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(8.dp)
                             )
                         }
                     }
@@ -183,8 +258,20 @@ fun DocumentCropAndFilterScreen(
                             title = documentTitleInput,
                             pageSize = selectedPageSize,
                             onSuccess = { docId ->
-                                showSaveDialog = false
-                                onSaveSuccess(docId)
+                                coroutineScope.launch {
+                                    if (selectedFormat == com.example.data.ExportFormat.JPG || selectedFormat == com.example.data.ExportFormat.PNG) {
+                                        val isPng = selectedFormat == com.example.data.ExportFormat.PNG
+                                        val pList = editorViewModel.repository.getPagesList(docId)
+                                        editorViewModel.repository.exportAllPagesAsImages(pList, documentTitleInput, isPng)
+                                        Toast.makeText(
+                                            context,
+                                            "Documento guardado e imágenes exportadas a Galería (${selectedFormat.iconLabel})",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    showSaveDialog = false
+                                    onSaveSuccess(docId)
+                                }
                             },
                             onError = { err ->
                                 Toast.makeText(context, "Error: $err", Toast.LENGTH_LONG).show()
@@ -198,7 +285,14 @@ fun DocumentCropAndFilterScreen(
                     if (isSaving) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                     } else {
-                        Text("Guardar y generar PDF")
+                        Text(
+                            text = when (selectedFormat) {
+                                com.example.data.ExportFormat.PDF -> "Guardar como PDF"
+                                com.example.data.ExportFormat.JPG -> "Guardar como JPG"
+                                com.example.data.ExportFormat.PNG -> "Guardar como PNG"
+                                else -> "Guardar documento"
+                            }
+                        )
                     }
                 }
             },
@@ -266,7 +360,7 @@ fun DocumentCropAndFilterScreen(
             ) {
                 Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Listo", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Guardar", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -508,6 +602,33 @@ fun DocumentCropAndFilterScreen(
                             Icon(Icons.Default.Delete, contentDescription = "Eliminar página", tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Big Prominent Primary Save Button
+                Button(
+                    onClick = { showSaveDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("save_document_prominent_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Guardar Documento (PDF)",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
             }
         }
