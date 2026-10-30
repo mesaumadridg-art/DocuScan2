@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">DocuScan</string>
+    <string name="app_tagline">Escanea, organiza y comparte</string>
+    <string name="action_scan">Escanear documento</string>
+    <string name="action_import_picture">Importar foto</string>
+    <string name="action_import_pdf">Importar PDF</string>
+    <string name="search_hint">Buscar documentos o texto OCR...</string>
+    <string name="tab_home">Inicio</string>
+    <string name="tab_documents">Documentos</string>
+    <string name="tab_tools">Herramientas</string>
+    <string name="tab_settings">Ajustes</string>
+    <string name="recent_docs">Documentos recientes</string>
+    <string name="empty_docs_title">Sin documentos aún</string>
+    <string name="empty_docs_subtitle">Toca el botón de escáner para digitalizar tu primer recibo, apunte, contrato o identificación.</string>
+</resources>
