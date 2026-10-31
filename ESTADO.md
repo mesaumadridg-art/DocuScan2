@@ -5,7 +5,7 @@ Resumen técnico para retomar el desarrollo. No incluye credenciales de firma (e
 - **App**: DocuScan — escáner con detección de bordes, filtros, OCR (ML Kit latino), PDF y exportación.
 - **Paquete**: `com.aistudio.docuscan.knrvpx` · namespace `com.example`
 - **SDK**: minSdk 24 · compile/target 36.1 · AGP 9.1.1 · Gradle 9.6.0 · Kotlin 2.2.10
-- **Versión**: 1.5 (versionCode 6)
+- **Versión**: 1.6 (versionCode 7)
 
 ## Compilar
 ```bash
@@ -28,6 +28,6 @@ Salidas: TXT en Descargas, copiar, compartir, ZIP con el texto, búsqueda por co
 El PDF **no** es buscable: no se dibuja texto, solo el bitmap.
 
 ## Pendientes
-1. PDF con capa de texto invisible (OCR embebido) para que sea buscable.
+1. PDF con capa de texto invisible (OCR embebido) para que sea buscable. Pospuesto: requiere guardar las cajas de ML Kit, migración de Room y una librería PDF extra.
 2. Migraciones de Room: hoy hay `fallbackToDestructiveMigration()`.
 3. Añadir páginas a un documento ya guardado (el flujo actual suma en el editor).
