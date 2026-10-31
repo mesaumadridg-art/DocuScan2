@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.DocumentEntity
+import com.example.ui.theme.brandOnSoft
+import com.example.ui.theme.brandSoft
 import com.example.ui.viewmodels.DocuScanViewModel
 import com.example.ui.viewmodels.LibraryTab
 import java.io.File
@@ -202,7 +204,7 @@ fun DocumentsLibraryScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(140.dp)
-                                    .background(Color(0xFFE5ECEF))
+                                    .background(brandSoft())
                             ) {
                                 if (doc.thumbnailPath != null && File(doc.thumbnailPath).exists()) {
                                     AsyncImage(
@@ -215,7 +217,7 @@ fun DocumentsLibraryScreen(
                                     Icon(
                                         Icons.Default.PictureAsPdf,
                                         contentDescription = null,
-                                        tint = Color(0xFF0C4A60),
+                                        tint = brandOnSoft(),
                                         modifier = Modifier
                                             .size(48.dp)
                                             .align(Alignment.Center)

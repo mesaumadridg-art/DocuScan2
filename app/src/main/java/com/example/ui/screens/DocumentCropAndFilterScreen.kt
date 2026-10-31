@@ -87,6 +87,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.imaging.DocumentFilter
 import com.example.ui.components.InteractiveCropCanvas
+import com.example.ui.theme.brandAction
+import com.example.ui.theme.brandActionContent
 import com.example.ui.viewmodels.EditorViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -248,7 +250,7 @@ fun DocumentCropAndFilterScreen(
                             val isSelected = selectedFormat == fmt
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) Color(0xFF0C4A60) else MaterialTheme.colorScheme.surfaceVariant,
+                                color = if (isSelected) brandAction() else MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable { selectedFormat = fmt }
@@ -351,7 +353,7 @@ fun DocumentCropAndFilterScreen(
                         )
                     },
                     enabled = !isSaving,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60)),
+                    colors = ButtonDefaults.buttonColors(containerColor = brandAction(), contentColor = brandActionContent()),
                     modifier = Modifier.testTag("confirm_save_button")
                 ) {
                     if (isSaving) {
@@ -436,7 +438,7 @@ fun DocumentCropAndFilterScreen(
 
             Button(
                 onClick = { showSaveDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B), contentColor = Color.White),
                 shape = RoundedCornerShape(20.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("save_document_toolbar_button")
@@ -710,7 +712,7 @@ fun DocumentCropAndFilterScreen(
                         .fillMaxWidth()
                         .height(52.dp)
                         .testTag("save_document_prominent_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B), contentColor = Color.White),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(

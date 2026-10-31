@@ -78,6 +78,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.theme.brandAction
+import com.example.ui.theme.brandActionContent
+import com.example.ui.theme.brandCard
+import com.example.ui.theme.brandCardContent
+import com.example.ui.theme.brandCardMuted
+import com.example.ui.theme.brandOnSoft
+import com.example.ui.theme.brandSoft
 import com.example.data.DocumentEntity
 import com.example.ui.viewmodels.DocuScanViewModel
 import com.example.ui.viewmodels.DocumentSortOrder
@@ -241,13 +248,13 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF0C4A60)),
+                                    .background(brandAction()),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.DocumentScanner,
                                     contentDescription = null,
-                                    tint = Color(0xFF64DFDF),
+                                    tint = brandActionContent(),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -332,7 +339,7 @@ fun HomeScreen(
                             .clickable { onNavigateToScanner() }
                             .testTag("scan_hero_card"),
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0C4A60))
+                        colors = CardDefaults.cardColors(containerColor = brandCard(), contentColor = brandCardContent())
                     ) {
                         Column(
                             modifier = Modifier
@@ -350,7 +357,7 @@ fun HomeScreen(
                             }
                             Column {
                                 Text("Escanear", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                Text("Cámara HD + Recorte", color = Color(0xFFBCE9F7), fontSize = 11.sp)
+                                Text("Cámara HD + Recorte", color = brandCardMuted(), fontSize = 11.sp)
                             }
                         }
                     }
@@ -363,7 +370,10 @@ fun HomeScreen(
                             .clickable { onNavigateToTools() }
                             .testTag("tools_quick_card"),
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
                         Column(
                             modifier = Modifier
@@ -380,7 +390,7 @@ fun HomeScreen(
                                 Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             }
                             Column {
-                                Text("Herramientas", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("Herramientas", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                                 Text("Unir, OCR, Marca de agua", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                             }
                         }
@@ -599,13 +609,13 @@ fun HomeScreen(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .background(Color(0xFFD0ECF7), CircleShape),
+                                .background(brandSoft(), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DocumentScanner,
                                 contentDescription = null,
-                                tint = Color(0xFF0C4A60),
+                                tint = brandOnSoft(),
                                 modifier = Modifier.size(32.dp)
                             )
                         }
@@ -626,7 +636,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(18.dp))
                         Button(
                             onClick = onNavigateToScanner,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60)),
+                            colors = ButtonDefaults.buttonColors(containerColor = brandAction(), contentColor = brandActionContent()),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -695,7 +705,7 @@ fun DocumentListItem(
                 modifier = Modifier
                     .size(68.dp, 80.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFE5ECEF))
+                    .background(brandSoft())
             ) {
                 if (doc.thumbnailPath != null && File(doc.thumbnailPath).exists()) {
                     AsyncImage(
@@ -706,7 +716,7 @@ fun DocumentListItem(
                     )
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFF0C4A60))
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = brandOnSoft())
                     }
                 }
 
@@ -772,7 +782,8 @@ fun DocumentListItem(
                             Icon(
                                 Icons.Default.DriveFileRenameOutline,
                                 contentDescription = "Renombrar",
-                                modifier = Modifier.padding(6.dp).size(14.dp)
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(6.dp).size(15.dp)
                             )
                         }
                     } else {

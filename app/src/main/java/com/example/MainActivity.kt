@@ -31,6 +31,7 @@ import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -56,6 +57,8 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.ToolsScreen
 import com.example.ui.theme.DocuScanTheme
+import com.example.ui.theme.brandAction
+import com.example.ui.theme.brandActionContent
 import com.example.ui.viewmodels.DocuScanViewModel
 import com.example.ui.viewmodels.EditorViewModel
 import com.example.ui.viewmodels.ScannerViewModel
@@ -122,8 +125,11 @@ class MainActivity : ComponentActivity() {
                                             },
                                             label = { Text("Inicio", fontSize = 11.sp) },
                                             colors = NavigationBarItemDefaults.colors(
-                                                indicatorColor = Color(0xFF0C4A60).copy(alpha = 0.2f),
-                                                selectedIconColor = Color(0xFF0C4A60)
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             modifier = Modifier.testTag("nav_tab_home")
                                         )
@@ -140,8 +146,11 @@ class MainActivity : ComponentActivity() {
                                             },
                                             label = { Text("Docs", fontSize = 11.sp) },
                                             colors = NavigationBarItemDefaults.colors(
-                                                indicatorColor = Color(0xFF0C4A60).copy(alpha = 0.2f),
-                                                selectedIconColor = Color(0xFF0C4A60)
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             modifier = Modifier.testTag("nav_tab_docs")
                                         )
@@ -158,8 +167,11 @@ class MainActivity : ComponentActivity() {
                                             },
                                             label = { Text("Herramientas", fontSize = 11.sp) },
                                             colors = NavigationBarItemDefaults.colors(
-                                                indicatorColor = Color(0xFF0C4A60).copy(alpha = 0.2f),
-                                                selectedIconColor = Color(0xFF0C4A60)
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             modifier = Modifier.testTag("nav_tab_tools")
                                         )
@@ -176,8 +188,11 @@ class MainActivity : ComponentActivity() {
                                             },
                                             label = { Text("Ajustes", fontSize = 11.sp) },
                                             colors = NavigationBarItemDefaults.colors(
-                                                indicatorColor = Color(0xFF0C4A60).copy(alpha = 0.2f),
-                                                selectedIconColor = Color(0xFF0C4A60)
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                             ),
                                             modifier = Modifier.testTag("nav_tab_settings")
                                         )
@@ -190,8 +205,8 @@ class MainActivity : ComponentActivity() {
                                             editorViewModel.clearPages()
                                             currentDestination = AppDestination.Camera
                                         },
-                                        containerColor = Color(0xFF0C4A60),
-                                        contentColor = Color.White,
+                                        containerColor = brandAction(),
+                                        contentColor = brandActionContent(),
                                         shape = CircleShape,
                                         elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
                                         modifier = Modifier.testTag("main_scan_fab")
@@ -199,7 +214,7 @@ class MainActivity : ComponentActivity() {
                                         Icon(
                                             imageVector = Icons.Default.CameraAlt,
                                             contentDescription = "Escanear documento",
-                                            tint = Color(0xFF64DFDF),
+                                            tint = brandActionContent(),
                                             modifier = Modifier.size(28.dp)
                                         )
                                     }

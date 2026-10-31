@@ -89,6 +89,8 @@ import com.example.data.DocumentEntity
 import com.example.data.PageEntity
 import com.example.imaging.QuadCorners
 import com.example.ui.util.rememberStoragePermissionGate
+import com.example.ui.theme.brandAction
+import com.example.ui.theme.brandActionContent
 import com.example.ui.viewmodels.DocuScanViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -260,7 +262,7 @@ fun DocumentViewerScreen(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF0C4A60).copy(alpha = 0.2f),
+                                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                             CircleShape
                                         ),
                                     contentAlignment = Alignment.Center
@@ -327,7 +329,7 @@ fun DocumentViewerScreen(
                         }
                     },
                     enabled = !isExporting,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B), contentColor = Color.White)
                 ) {
                     if (isExporting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -386,7 +388,7 @@ fun DocumentViewerScreen(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF0C4A60).copy(alpha = 0.2f),
+                                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                             CircleShape
                                         ),
                                     contentAlignment = Alignment.Center
@@ -446,7 +448,7 @@ fun DocumentViewerScreen(
                             currentPageIndex = selectedPageIndex
                         )
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60))
+                    colors = ButtonDefaults.buttonColors(containerColor = brandAction(), contentColor = brandActionContent())
                 ) {
                     Text("Compartir ${selectedShareFormat.iconLabel}")
                 }
@@ -806,7 +808,7 @@ fun DocumentViewerScreen(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("download_pdf_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B), contentColor = Color.White),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
@@ -821,7 +823,7 @@ fun DocumentViewerScreen(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("share_pdf_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60)),
+                    colors = ButtonDefaults.buttonColors(containerColor = brandAction(), contentColor = brandActionContent()),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
@@ -836,7 +838,7 @@ fun DocumentViewerScreen(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("open_pdf_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B4D8)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B4D8), contentColor = Color(0xFF003544)),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {

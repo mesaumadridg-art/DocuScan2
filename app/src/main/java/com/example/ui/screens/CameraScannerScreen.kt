@@ -170,7 +170,7 @@ fun CameraScannerScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C4A60)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F6B85), contentColor = Color.White),
                     modifier = Modifier.testTag("grant_camera_permission_button")
                 ) {
                     Text("Conceder Permiso", color = Color.White)
@@ -178,7 +178,7 @@ fun CameraScannerScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = { photoPickerLauncher.launch("image/*") },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2E38))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2E38), contentColor = Color(0xFFE3F2F7))
                 ) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color(0xFF64DFDF))
                     Spacer(modifier = Modifier.width(8.dp))
