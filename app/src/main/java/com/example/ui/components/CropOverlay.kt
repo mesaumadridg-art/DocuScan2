@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -20,13 +21,31 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.imaging.QuadCorners
 import kotlin.math.hypot
+
+/** Rectángulo donde se dibuja la imagen dentro del canvas (ajuste por aspecto). */
+private data class DrawRect(val w: Float, val h: Float, val x: Float, val y: Float) {
+    fun toScreen(p: PointF) = Offset(x + p.x * w, y + p.y * h)
+}
+
+private fun fitRect(bitmap: Bitmap, canvas: Size): DrawRect {
+    if (canvas.width <= 0f || canvas.height <= 0f) return DrawRect(0f, 0f, 0f, 0f)
+    val bmpAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+    val canvasAspect = canvas.width / canvas.height
+    return if (bmpAspect > canvasAspect) {
+        val h = canvas.width / bmpAspect
+        DrawRect(canvas.width, h, 0f, (canvas.height - h) / 2f)
+    } else {
+        val w = canvas.height * bmpAspect
+        DrawRect(w, canvas.height, (canvas.width - w) / 2f, 0f)
+    }
+}
 
 @Composable
 fun InteractiveCropCanvas(
@@ -38,46 +57,29 @@ fun InteractiveCropCanvas(
     var activeCorner by remember { mutableStateOf<Int?>(null) } // 0: TL, 1: TR, 2: BR, 3: BL
     var containerSize by remember { mutableStateOf(Size.Zero) }
 
+    // El gesto NO debe reiniciarse cuando cambian las esquinas: se lee el valor actual
+    // con rememberUpdatedState en vez de usar `corners` como key del pointerInput.
+    val currentCorners by rememberUpdatedState(corners)
+    val currentBitmap by rememberUpdatedState(bitmap)
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(bitmap, corners) {
+            .onSizeChanged { containerSize = Size(it.width.toFloat(), it.height.toFloat()) }
+            .pointerInput(bitmap) {
                 detectDragGestures(
                     onDragStart = { offset ->
-                        if (containerSize.width <= 0 || containerSize.height <= 0) return@detectDragGestures
+                        if (containerSize.width <= 0f || containerSize.height <= 0f) return@detectDragGestures
+                        val rect = fitRect(currentBitmap, containerSize)
+                        val c = currentCorners
+                        val touchRadius = 64.dp.toPx()
+                        fun near(p: PointF) = hypot(offset.x - rect.toScreen(p).x, offset.y - rect.toScreen(p).y) < touchRadius
 
-                        // Calculate image display rect within canvas (aspect fit)
-                        val bmpW = bitmap.width.toFloat()
-                        val bmpH = bitmap.height.toFloat()
-                        val canvasW = containerSize.width
-                        val canvasH = containerSize.height
-
-                        val bmpAspect = bmpW / bmpH
-                        val canvasAspect = canvasW / canvasH
-
-                        val (drawW, drawH, offsetX, offsetY) = if (bmpAspect > canvasAspect) {
-                            val w = canvasW
-                            val h = canvasW / bmpAspect
-                            listOf(w, h, 0f, (canvasH - h) / 2f)
-                        } else {
-                            val h = canvasH
-                            val w = canvasH * bmpAspect
-                            listOf(w, h, (canvasW - w) / 2f, 0f)
-                        }
-
-                        fun toScreen(p: PointF) = Offset(offsetX + p.x * drawW, offsetY + p.y * drawH)
-
-                        val tlScreen = toScreen(corners.topLeft)
-                        val trScreen = toScreen(corners.topRight)
-                        val brScreen = toScreen(corners.bottomRight)
-                        val blScreen = toScreen(corners.bottomLeft)
-
-                        val touchRadius = 60.dp.toPx()
                         activeCorner = when {
-                            hypot((offset.x - tlScreen.x), (offset.y - tlScreen.y)) < touchRadius -> 0
-                            hypot((offset.x - trScreen.x), (offset.y - trScreen.y)) < touchRadius -> 1
-                            hypot((offset.x - brScreen.x), (offset.y - brScreen.y)) < touchRadius -> 2
-                            hypot((offset.x - blScreen.x), (offset.y - blScreen.y)) < touchRadius -> 3
+                            near(c.topLeft) -> 0
+                            near(c.topRight) -> 1
+                            near(c.bottomRight) -> 2
+                            near(c.bottomLeft) -> 3
                             else -> null
                         }
                     },
@@ -85,103 +87,69 @@ fun InteractiveCropCanvas(
                         val corner = activeCorner ?: return@detectDragGestures
                         change.consume()
 
-                        val bmpW = bitmap.width.toFloat()
-                        val bmpH = bitmap.height.toFloat()
-                        val canvasW = containerSize.width
-                        val canvasH = containerSize.height
+                        val rect = fitRect(currentBitmap, containerSize)
+                        if (rect.w <= 0f || rect.h <= 0f) return@detectDragGestures
+                        val dx = dragAmount.x / rect.w
+                        val dy = dragAmount.y / rect.h
+                        val c = currentCorners
 
-                        val bmpAspect = bmpW / bmpH
-                        val canvasAspect = canvasW / canvasH
+                        // Rango siempre válido (si los puntos se cruzan, no revienta).
+                        fun clampX(v: Float, lo: Float, hi: Float) = v.coerceIn(minOf(lo, hi), maxOf(lo, hi))
 
-                        val (drawW, drawH, offsetX, offsetY) = if (bmpAspect > canvasAspect) {
-                            val w = canvasW
-                            val h = canvasW / bmpAspect
-                            listOf(w, h, 0f, (canvasH - h) / 2f)
-                        } else {
-                            val h = canvasH
-                            val w = canvasH * bmpAspect
-                            listOf(w, h, (canvasW - w) / 2f, 0f)
-                        }
-
-                        val normDeltaX = dragAmount.x / drawW
-                        val normDeltaY = dragAmount.y / drawH
-
-                        val newCorners = when (corner) {
-                            0 -> corners.copy(
+                        val updated = when (corner) {
+                            0 -> c.copy(
                                 topLeft = PointF(
-                                    (corners.topLeft.x + normDeltaX).coerceIn(0f, corners.topRight.x - 0.05f),
-                                    (corners.topLeft.y + normDeltaY).coerceIn(0f, corners.bottomLeft.y - 0.05f)
+                                    clampX(c.topLeft.x + dx, 0f, c.topRight.x - 0.04f),
+                                    clampX(c.topLeft.y + dy, 0f, c.bottomLeft.y - 0.04f)
                                 )
                             )
-                            1 -> corners.copy(
+                            1 -> c.copy(
                                 topRight = PointF(
-                                    (corners.topRight.x + normDeltaX).coerceIn(corners.topLeft.x + 0.05f, 1f),
-                                    (corners.topRight.y + normDeltaY).coerceIn(0f, corners.bottomRight.y - 0.05f)
+                                    clampX(c.topRight.x + dx, c.topLeft.x + 0.04f, 1f),
+                                    clampX(c.topRight.y + dy, 0f, c.bottomRight.y - 0.04f)
                                 )
                             )
-                            2 -> corners.copy(
+                            2 -> c.copy(
                                 bottomRight = PointF(
-                                    (corners.bottomRight.x + normDeltaX).coerceIn(corners.bottomLeft.x + 0.05f, 1f),
-                                    (corners.bottomRight.y + normDeltaY).coerceIn(corners.topRight.y + 0.05f, 1f)
+                                    clampX(c.bottomRight.x + dx, c.bottomLeft.x + 0.04f, 1f),
+                                    clampX(c.bottomRight.y + dy, c.topRight.y + 0.04f, 1f)
                                 )
                             )
-                            3 -> corners.copy(
+                            3 -> c.copy(
                                 bottomLeft = PointF(
-                                    (corners.bottomLeft.x + normDeltaX).coerceIn(0f, corners.bottomRight.x - 0.05f),
-                                    (corners.bottomLeft.y + normDeltaY).coerceIn(corners.topLeft.y + 0.05f, 1f)
+                                    clampX(c.bottomLeft.x + dx, 0f, c.bottomRight.x - 0.04f),
+                                    clampX(c.bottomLeft.y + dy, c.topLeft.y + 0.04f, 1f)
                                 )
                             )
-                            else -> corners
+                            else -> c
                         }
-                        onCornersChanged(newCorners)
+                        onCornersChanged(updated)
                     },
-                    onDragEnd = {
-                        activeCorner = null
-                    },
-                    onDragCancel = {
-                        activeCorner = null
-                    }
+                    onDragEnd = { activeCorner = null },
+                    onDragCancel = { activeCorner = null }
                 )
             }
     ) {
         val composeBitmap = remember(bitmap) { bitmap.asImageBitmap() }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            containerSize = size
             val canvasW = size.width
             val canvasH = size.height
+            val rect = fitRect(bitmap, size)
 
-            val bmpW = bitmap.width.toFloat()
-            val bmpH = bitmap.height.toFloat()
-            val bmpAspect = bmpW / bmpH
-            val canvasAspect = canvasW / canvasH
-
-            val (drawW, drawH, offsetX, offsetY) = if (bmpAspect > canvasAspect) {
-                val w = canvasW
-                val h = canvasW / bmpAspect
-                listOf(w, h, 0f, (canvasH - h) / 2f)
-            } else {
-                val h = canvasH
-                val w = canvasH * bmpAspect
-                listOf(w, h, (canvasW - w) / 2f, 0f)
-            }
-
-            // 1. Draw source image
+            // 1. Imagen
             drawImage(
                 image = composeBitmap,
-                dstOffset = IntOffset(offsetX.toInt(), offsetY.toInt()),
-                dstSize = IntSize(drawW.toInt(), drawH.toInt())
+                dstOffset = IntOffset(rect.x.toInt(), rect.y.toInt()),
+                dstSize = IntSize(rect.w.toInt(), rect.h.toInt())
             )
 
-            fun toScreen(p: PointF) = Offset(offsetX + p.x * drawW, offsetY + p.y * drawH)
+            val pTL = rect.toScreen(corners.topLeft)
+            val pTR = rect.toScreen(corners.topRight)
+            val pBR = rect.toScreen(corners.bottomRight)
+            val pBL = rect.toScreen(corners.bottomLeft)
 
-            val pTL = toScreen(corners.topLeft)
-            val pTR = toScreen(corners.topRight)
-            val pBR = toScreen(corners.bottomRight)
-            val pBL = toScreen(corners.bottomLeft)
-
-            // 2. Oscurecer FUERA del cuadrilátero (antes se sombreaba dentro, que es al revés:
-            //    tapaba justo el documento que el usuario quiere revisar).
+            // 2. Oscurecer fuera del cuadrilátero
             val quadPath = Path().apply {
                 moveTo(pTL.x, pTL.y)
                 lineTo(pTR.x, pTR.y)
@@ -189,7 +157,6 @@ fun InteractiveCropCanvas(
                 lineTo(pBL.x, pBL.y)
                 close()
             }
-
             val dimPath = Path().apply {
                 fillType = PathFillType.EvenOdd
                 addRect(Rect(0f, 0f, canvasW, canvasH))
@@ -197,49 +164,32 @@ fun InteractiveCropCanvas(
             }
             drawPath(path = dimPath, color = Color(0x99000000))
 
-            // 3. Draw border lines
-            val borderStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+            // 3. Bordes
+            val borderWidth = 3.dp.toPx()
             val accentTurquoise = Color(0xFF00B4D8)
             val petrolBlue = Color(0xFF0C4A60)
 
-            drawLine(color = accentTurquoise, start = pTL, end = pTR, strokeWidth = borderStroke.width)
-            drawLine(color = accentTurquoise, start = pTR, end = pBR, strokeWidth = borderStroke.width)
-            drawLine(color = accentTurquoise, start = pBR, end = pBL, strokeWidth = borderStroke.width)
-            drawLine(color = accentTurquoise, start = pBL, end = pTL, strokeWidth = borderStroke.width)
+            drawLine(color = accentTurquoise, start = pTL, end = pTR, strokeWidth = borderWidth, cap = StrokeCap.Round)
+            drawLine(color = accentTurquoise, start = pTR, end = pBR, strokeWidth = borderWidth, cap = StrokeCap.Round)
+            drawLine(color = accentTurquoise, start = pBR, end = pBL, strokeWidth = borderWidth, cap = StrokeCap.Round)
+            drawLine(color = accentTurquoise, start = pBL, end = pTL, strokeWidth = borderWidth, cap = StrokeCap.Round)
 
-            // 4. Draw corner handles
+            // 4. Asas
             val handleRadius = 14.dp.toPx()
             val activeRadius = 18.dp.toPx()
-
             val cornerPoints = listOf(pTL, pTR, pBR, pBL)
             for ((idx, pt) in cornerPoints.withIndex()) {
                 val isActive = activeCorner == idx
                 val r = if (isActive) activeRadius else handleRadius
 
-                // Outer halo
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.5f),
-                    radius = r + 4.dp.toPx(),
-                    center = pt
-                )
-                // Border circle
-                drawCircle(
-                    color = petrolBlue,
-                    radius = r,
-                    center = pt
-                )
-                // Inner accent
+                drawCircle(color = Color.White.copy(alpha = 0.5f), radius = r + 4.dp.toPx(), center = pt)
+                drawCircle(color = petrolBlue, radius = r, center = pt)
                 drawCircle(
                     color = if (isActive) Color(0xFF64DFDF) else accentTurquoise,
                     radius = r - 3.dp.toPx(),
                     center = pt
                 )
-                // Center point
-                drawCircle(
-                    color = Color.White,
-                    radius = 4.dp.toPx(),
-                    center = pt
-                )
+                drawCircle(color = Color.White, radius = 4.dp.toPx(), center = pt)
             }
         }
     }
