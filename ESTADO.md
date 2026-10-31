@@ -5,7 +5,7 @@ Resumen técnico para retomar el desarrollo. No incluye credenciales de firma (e
 - **App**: DocuScan — escáner con detección de bordes, filtros, OCR (ML Kit latino), PDF y exportación.
 - **Paquete**: `com.aistudio.docuscan.knrvpx` · namespace `com.example`
 - **SDK**: minSdk 24 · compile/target 36.1 · AGP 9.1.1 · Gradle 9.6.0 · Kotlin 2.2.10
-- **Versión**: 1.6 (versionCode 7)
+- **Versión**: 1.7 (versionCode 8)
 
 ## Compilar
 ```bash
@@ -26,6 +26,12 @@ Para `assembleDebug` hace falta un `debug.keystore` en la raíz del proyecto.
 Al guardar se ejecuta OCR en background por página: guarda `PageEntity.ocrText` y consolidado en `DocumentEntity.combinedOcrText`.
 Salidas: TXT en Descargas, copiar, compartir, ZIP con el texto, búsqueda por contenido y OCR de una foto suelta en Herramientas.
 El PDF **no** es buscable: no se dibuja texto, solo el bitmap.
+
+## Comportamiento de guardado (decidido con el usuario)
+- Los botones del editor dicen "Guardar" y guardan **solo en la biblioteca** de la app (Room + `filesDir/scans`, `filesDir/pdfs`). No bajan nada a Descargas.
+- Persistencia verificada con `adb reboot`: los documentos y sus archivos siguen tras reiniciar el dispositivo.
+- El botón "Descargar" del visor sí exporta a Descargas (PDF/JPG/PNG/TXT/ZIP) y es la única vía para sacar el TXT.
+- En Herramientas hay un documento seleccionado visible y cambiable; marca de agua y "compartir JPG" usan ese documento (antes usaban `documents.first()`).
 
 ## Pendientes
 1. PDF con capa de texto invisible (OCR embebido) para que sea buscable. Pospuesto: requiere guardar las cajas de ML Kit, migración de Room y una librería PDF extra.
