@@ -13,9 +13,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -178,7 +180,8 @@ fun InteractiveCropCanvas(
             val pBR = toScreen(corners.bottomRight)
             val pBL = toScreen(corners.bottomLeft)
 
-            // 2. Draw darkened overlay outside document crop area
+            // 2. Oscurecer FUERA del cuadrilátero (antes se sombreaba dentro, que es al revés:
+            //    tapaba justo el documento que el usuario quiere revisar).
             val quadPath = Path().apply {
                 moveTo(pTL.x, pTL.y)
                 lineTo(pTR.x, pTR.y)
@@ -187,11 +190,12 @@ fun InteractiveCropCanvas(
                 close()
             }
 
-            // Draw translucent shadow outside quadrilateral
-            drawPath(
-                path = quadPath,
-                color = Color(0x33000000)
-            )
+            val dimPath = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addRect(Rect(0f, 0f, canvasW, canvasH))
+                addPath(quadPath)
+            }
+            drawPath(path = dimPath, color = Color(0x99000000))
 
             // 3. Draw border lines
             val borderStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)

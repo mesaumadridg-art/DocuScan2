@@ -69,11 +69,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.imaging.DocumentFilter
@@ -335,18 +338,29 @@ fun DocumentCropAndFilterScreen(
                 )
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
-                    text = "Editar Página ${currentIndex + 1} de ${pages.size}",
+                    text = "Editar página ${currentIndex + 1} de ${pages.size}",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
                 if (currentPage.detectionMessage.isNotBlank()) {
                     Text(
                         text = currentPage.detectionMessage,
                         color = Color(0xFF64DFDF),
-                        fontSize = 11.sp
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -355,12 +369,19 @@ fun DocumentCropAndFilterScreen(
                 onClick = { showSaveDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
                 shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("save_document_toolbar_button")
             ) {
-                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Guardar", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Guardar",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
             }
         }
 
@@ -438,41 +459,37 @@ fun DocumentCropAndFilterScreen(
             ) {
                 when (activeTab) {
                     EditModeTab.CROP -> {
-                        // Quick crop tools: Auto detect, Full screen, Rotate
+                        // Herramientas compactas: icono arriba, etiqueta corta abajo. Antes eran
+                        // TextButton con icono+texto que no cabían en una línea y estiraban el panel.
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(
-                                onClick = { editorViewModel.autoDetectCurrentEdges() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF64DFDF)),
-                                modifier = Modifier.testTag("auto_detect_edges_button")
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Auto Detectar", fontSize = 13.sp)
-                            }
-
-                            TextButton(
-                                onClick = { editorViewModel.resetCornersToFull() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
-                                modifier = Modifier.testTag("full_page_crop_button")
-                            ) {
-                                Icon(Icons.Default.Fullscreen, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Página Completa", fontSize = 13.sp)
-                            }
-
-                            TextButton(
-                                onClick = { editorViewModel.rotateCurrentPage() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
-                                modifier = Modifier.testTag("rotate_page_button")
-                            ) {
-                                Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Rotar 90°", fontSize = 13.sp)
-                            }
+                            CropToolButton(
+                                icon = Icons.Default.AutoAwesome,
+                                label = "Auto",
+                                tag = "auto_detect_edges_button",
+                                tint = Color(0xFF64DFDF),
+                                modifier = Modifier.weight(1f),
+                                onClick = { editorViewModel.autoDetectCurrentEdges() }
+                            )
+                            CropToolButton(
+                                icon = Icons.Default.Fullscreen,
+                                label = "Completa",
+                                tag = "full_page_crop_button",
+                                tint = Color.White,
+                                modifier = Modifier.weight(1f),
+                                onClick = { editorViewModel.resetCornersToFull() }
+                            )
+                            CropToolButton(
+                                icon = Icons.Default.RotateRight,
+                                label = "Rotar",
+                                tag = "rotate_page_button",
+                                tint = Color.White,
+                                modifier = Modifier.weight(1f),
+                                onClick = { editorViewModel.rotateCurrentPage() }
+                            )
                         }
                     }
 
@@ -543,9 +560,11 @@ fun DocumentCropAndFilterScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                // La tira de miniaturas solo aporta con varias páginas; con una sola se comía
+                // ~74 dp de alto que necesita la previsualización.
+                if (pages.size > 1) {
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom Page Strip (Thumbnails of all pages in batch)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -603,8 +622,9 @@ fun DocumentCropAndFilterScreen(
                         }
                     }
                 }
+                }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Big Prominent Primary Save Button
                 Button(
@@ -627,10 +647,50 @@ fun DocumentCropAndFilterScreen(
                         text = "Guardar Documento (PDF)",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * Botón compacto de herramienta: icono arriba, etiqueta corta abajo.
+ * Se usa con `Modifier.weight(1f)` para que los tres quepan siempre en una línea.
+ */
+@Composable
+private fun CropToolButton(
+    icon: ImageVector,
+    label: String,
+    tag: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .testTag(tag)
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
