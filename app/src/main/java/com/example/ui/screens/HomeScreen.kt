@@ -769,14 +769,11 @@ fun DocumentListItem(
                             color = MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier.clickable(onClick = onRename)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Renombrar", fontSize = 11.sp)
-                            }
+                            Icon(
+                                Icons.Default.DriveFileRenameOutline,
+                                contentDescription = "Renombrar",
+                                modifier = Modifier.padding(6.dp).size(14.dp)
+                            )
                         }
                     } else {
                         Surface(

@@ -206,7 +206,7 @@ fun DocumentCropAndFilterScreen(
             onDismissRequest = { if (!isSaving) showSaveDialog = false },
             title = {
                 Text(
-                    text = "Descargar documento",
+                    text = "Guardar documento",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleLarge
                 )
@@ -335,17 +335,9 @@ fun DocumentCropAndFilterScreen(
                                         ).show()
                                     }
                                     if (selectedFormat == com.example.data.ExportFormat.PDF) {
-                                        val savedDoc = editorViewModel.repository.getDocumentById(docId)
-                                        val pdfPath = savedDoc?.pdfPath
-                                        val exported = if (pdfPath != null) {
-                                            editorViewModel.repository.exportPdfToDownloads(
-                                                java.io.File(pdfPath),
-                                                savedDoc?.title ?: documentTitleInput
-                                            )
-                                        } else null
                                         Toast.makeText(
                                             context,
-                                            if (exported != null) "PDF descargado en la carpeta Descargas" else "Documento guardado en DocuScan",
+                                            "Documento guardado en DocuScan",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
@@ -367,10 +359,10 @@ fun DocumentCropAndFilterScreen(
                     } else {
                         Text(
                             text = when (selectedFormat) {
-                                com.example.data.ExportFormat.PDF -> "Descargar PDF"
-                                com.example.data.ExportFormat.JPG -> "Descargar JPG"
-                                com.example.data.ExportFormat.PNG -> "Descargar PNG"
-                                else -> "Descargar documento"
+                                com.example.data.ExportFormat.PDF -> "Guardar PDF"
+                                com.example.data.ExportFormat.JPG -> "Guardar JPG"
+                                com.example.data.ExportFormat.PNG -> "Guardar PNG"
+                                else -> "Guardar documento"
                             }
                         )
                     }
@@ -449,10 +441,10 @@ fun DocumentCropAndFilterScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("save_document_toolbar_button")
             ) {
-                Icon(Icons.Default.FileDownload, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Descargar",
+                    text = "Guardar",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
@@ -722,14 +714,14 @@ fun DocumentCropAndFilterScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.FileDownload,
+                        imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Descargar documento",
+                        text = "Guardar documento",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,

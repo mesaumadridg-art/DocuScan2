@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Compress
@@ -94,6 +95,71 @@ fun ToolsScreen(
     var showOcrResultDialog by remember { mutableStateOf(false) }
     var extractedOcrText by remember { mutableStateOf("") }
     var isRunningOcr by remember { mutableStateOf(false) }
+
+    // Documento sobre el que actúan las herramientas (siempre visible y cambiable)
+    var activeDoc by remember { mutableStateOf<DocumentEntity?>(null) }
+    var showDocPicker by remember { mutableStateOf(false) }
+    var pickerForWatermark by remember { mutableStateOf(false) }
+
+    LaunchedEffect(documents) {
+        val current = activeDoc
+        if (current == null || documents.none { it.id == current.id }) {
+            activeDoc = documents.firstOrNull()
+        }
+    }
+
+    // Selector de documento
+    if (showDocPicker) {
+        AlertDialog(
+            onDismissRequest = { showDocPicker = false },
+            title = { Text("Elegir documento") },
+            text = {
+                if (documents.isEmpty()) {
+                    Text("Todavía no tienes documentos guardados.")
+                } else {
+                    LazyColumn(modifier = Modifier.height(300.dp)) {
+                        items(documents) { doc ->
+                            val isSel = doc.id == activeDoc?.id
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        activeDoc = doc
+                                        if (pickerForWatermark) watermarkDoc = doc
+                                        showDocPicker = false
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = doc.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${doc.pageCount} p.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDocPicker = false }) { Text("Cerrar") }
+            }
+        )
+    }
 
     val ocrPhotoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -210,6 +276,22 @@ fun ToolsScreen(
             title = { Text("Añadir Marca de Agua") },
             text = {
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = watermarkDoc!!.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                pickerForWatermark = true
+                                showDocPicker = true
+                            }
+                        ) { Text("Cambiar", fontSize = 12.sp) }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text("Texto visible en diagonal a lo largo de cada página del PDF:")
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
@@ -324,6 +406,52 @@ fun ToolsScreen(
             }
         }
 
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        pickerForWatermark = false
+                        showDocPicker = true
+                    },
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Documento seleccionado",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f)
+                        )
+                        Text(
+                            text = activeDoc?.title ?: "Ninguno todavía",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Text(
+                        text = "Cambiar",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        }
+
         // Tool 1: Merge PDFs
         item {
             ToolCard(
@@ -357,8 +485,8 @@ fun ToolsScreen(
                 icon = Icons.Default.WaterDrop,
                 iconBg = Color(0xFF028090),
                 onClick = {
-                    if (documents.isNotEmpty()) {
-                        watermarkDoc = documents.first()
+                    if (activeDoc != null) {
+                        watermarkDoc = activeDoc
                         showWatermarkDialog = true
                     } else {
                         Toast.makeText(context, "Primero debes escanear o tener un documento", Toast.LENGTH_SHORT).show()
@@ -375,10 +503,10 @@ fun ToolsScreen(
                 icon = Icons.Default.Description,
                 iconBg = Color(0xFF1B4965),
                 onClick = {
-                    val firstDoc = documents.firstOrNull()
-                    if (firstDoc != null) {
+                    val targetDoc = activeDoc
+                    if (targetDoc != null) {
                         coroutineScope.launch {
-                            val pages = viewModel.repository.getPagesList(firstDoc.id)
+                            val pages = viewModel.repository.getPagesList(targetDoc.id)
                             val paths = pages.map { it.processedImagePath }
                             viewModel.pdfManager.shareImages(paths)
                         }
