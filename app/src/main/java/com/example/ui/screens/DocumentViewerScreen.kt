@@ -229,7 +229,7 @@ fun DocumentViewerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.FileDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Guardar en el Dispositivo", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text("Descargar al dispositivo", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 }
             },
             text = {
@@ -333,7 +333,7 @@ fun DocumentViewerScreen(
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Text("Guardar ${selectedExportFormat.iconLabel}")
+                    Text("Descargar ${selectedExportFormat.iconLabel}")
                 }
             },
             dismissButton = {
