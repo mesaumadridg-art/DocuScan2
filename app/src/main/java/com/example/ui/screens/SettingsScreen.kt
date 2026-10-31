@@ -53,6 +53,13 @@ import com.example.ui.viewmodels.DocuScanViewModel
 fun SettingsScreen(
     viewModel: DocuScanViewModel
 ) {
+
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val versionName = androidx.compose.runtime.remember {
+        runCatching {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+        }.getOrNull() ?: ""
+    }
     val preferences by viewModel.userPreferences.collectAsState()
 
     LazyColumn(
@@ -284,7 +291,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "DocuScan v1.0.0 Nativo • Diseñado en Kotlin & Jetpack Compose",
+                        text = "DocuScan v${versionName} Nativo • Diseñado en Kotlin & Jetpack Compose",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
