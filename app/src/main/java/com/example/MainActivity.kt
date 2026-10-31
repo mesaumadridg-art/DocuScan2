@@ -187,6 +187,7 @@ class MainActivity : ComponentActivity() {
                                     FloatingActionButton(
                                         onClick = {
                                             scannerViewModel.clearDrafts()
+                                            editorViewModel.clearPages()
                                             currentDestination = AppDestination.Camera
                                         },
                                         containerColor = Color(0xFF0C4A60),
@@ -211,6 +212,7 @@ class MainActivity : ComponentActivity() {
                                             viewModel = docuScanViewModel,
                                             onNavigateToScanner = {
                                                 scannerViewModel.clearDrafts()
+                                                editorViewModel.clearPages()
                                                 currentDestination = AppDestination.Camera
                                             },
                                             onNavigateToDocument = { docId ->
@@ -221,6 +223,7 @@ class MainActivity : ComponentActivity() {
                                             },
                                             onImportPhotos = { uris ->
                                                 scannerViewModel.clearDrafts()
+                                                editorViewModel.clearPages()
                                                 scannerViewModel.importImagesFromUris(uris) {
                                                     val drafts = scannerViewModel.draftPages.value
                                                     if (drafts.isNotEmpty()) {
@@ -260,7 +263,13 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToEditor = {
                                     val drafts = scannerViewModel.draftPages.value
                                     if (drafts.isNotEmpty()) {
-                                        editorViewModel.initDraftPages(drafts)
+                                        // Si ya hay páginas en el editor venimos de "Agregar páginas":
+                                        // se suman al documento en curso en vez de reemplazarlo.
+                                        if (editorViewModel.pages.value.isEmpty()) {
+                                            editorViewModel.initDraftPages(drafts)
+                                        } else {
+                                            editorViewModel.addPages(drafts)
+                                        }
                                         currentDestination = AppDestination.Editor
                                     }
                                 }
@@ -274,6 +283,12 @@ class MainActivity : ComponentActivity() {
                                 onSaveSuccess = { newDocId ->
                                     scannerViewModel.clearDrafts()
                                     currentDestination = AppDestination.Viewer(newDocId)
+                                },
+                                onNavigateToScanner = {
+                                    // Volvemos al escáner conservando las páginas del editor:
+                                    // al capturar se agregarán al final.
+                                    scannerViewModel.clearDrafts()
+                                    currentDestination = AppDestination.Camera
                                 }
                             )
                         }

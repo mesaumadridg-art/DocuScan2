@@ -2,7 +2,9 @@ package com.example.ui.viewmodels
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.PointF
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.DocuScanApp
@@ -161,6 +163,49 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun addPages(newDrafts: List<DraftPage>) {
         _pages.value = _pages.value + newDrafts
         updateCurrentPreview()
+    }
+
+    fun clearPages() {
+        _pages.value = emptyList()
+        _currentPageIndex.value = 0
+        _currentPreview.value = null
+    }
+
+    /** Agrega páginas elegidas de la galería al documento que se está editando. */
+    fun addPagesFromUris(uris: List<Uri>, onComplete: (Int) -> Unit = {}) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val newDrafts = mutableListOf<DraftPage>()
+            for (uri in uris) {
+                try {
+                    val input = app.contentResolver.openInputStream(uri)
+                    val bitmap = BitmapFactory.decodeStream(input)
+                    input?.close()
+                    if (bitmap != null) {
+                        val detection = EdgeDetector.detectPaperEdges(bitmap)
+                        newDrafts.add(
+                            DraftPage(
+                                rawBitmap = bitmap,
+                                corners = detection.corners,
+                                isAutoDetected = detection.isDocumentDetected,
+                                detectionMessage = detection.message
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            withContext(Dispatchers.Main) {
+                if (newDrafts.isNotEmpty()) {
+                    addPages(newDrafts)
+                    _currentPageIndex.value = _pages.value.lastIndex
+                    updateCurrentPreview()
+                }
+                onComplete(newDrafts.size)
+            }
+        }
     }
 
     private fun updateCurrentPreview() {

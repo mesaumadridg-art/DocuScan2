@@ -9,6 +9,7 @@ import com.example.data.PdfPageSize
 import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,10 +29,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Filter
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -96,7 +101,8 @@ enum class EditModeTab(val title: String) {
 fun DocumentCropAndFilterScreen(
     editorViewModel: EditorViewModel,
     onNavigateBack: () -> Unit,
-    onSaveSuccess: (Long) -> Unit
+    onSaveSuccess: (Long) -> Unit,
+    onNavigateToScanner: () -> Unit = {}
 ) {
     BackHandler {
         onNavigateBack()
@@ -110,6 +116,24 @@ fun DocumentCropAndFilterScreen(
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(EditModeTab.CROP) }
     var showSaveDialog by remember { mutableStateOf(false) }
+    var showAddPageDialog by remember { mutableStateOf(false) }
+
+    // Añadir páginas desde la galería sin salir del editor.
+    val addFromGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            editorViewModel.addPagesFromUris(uris) { added ->
+                if (added > 0) {
+                    android.widget.Toast.makeText(
+                        context,
+                        if (added == 1) "Página agregada" else "$added páginas agregadas",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
     var selectedPageSize by remember { mutableStateOf(PdfPageSize.LETTER) }
     var documentTitleInput by remember {
         mutableStateOf("DocuScan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}")
@@ -139,6 +163,43 @@ fun DocumentCropAndFilterScreen(
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Save Confirmation Dialog with format options
+    if (showAddPageDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddPageDialog = false },
+            title = { Text("Agregar páginas") },
+            text = {
+                Column {
+                    Text(
+                        "Las páginas nuevas se agregan al final de este documento.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AddPageOption(
+                        icon = Icons.Default.AddAPhoto,
+                        title = "Tomar otra foto",
+                        subtitle = "Abre el escáner y vuelve aquí con la página nueva"
+                    ) {
+                        showAddPageDialog = false
+                        onNavigateToScanner()
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AddPageOption(
+                        icon = Icons.Default.PhotoLibrary,
+                        title = "Elegir de la galería",
+                        subtitle = "Importa una o varias imágenes de una vez"
+                    ) {
+                        showAddPageDialog = false
+                        addFromGalleryLauncher.launch("image/*")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddPageDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { if (!isSaving) showSaveDialog = false },
@@ -150,7 +211,7 @@ fun DocumentCropAndFilterScreen(
                 )
             },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(
                         "Introduce el nombre para tu documento (${pages.size} ${if (pages.size == 1) "página" else "páginas"}):",
                         style = MaterialTheme.typography.bodyMedium
@@ -490,6 +551,14 @@ fun DocumentCropAndFilterScreen(
                                 modifier = Modifier.weight(1f),
                                 onClick = { editorViewModel.rotateCurrentPage() }
                             )
+                            CropToolButton(
+                                icon = Icons.Default.Add,
+                                label = "Añadir",
+                                tag = "add_page_button",
+                                tint = Color(0xFF64DFDF),
+                                modifier = Modifier.weight(1f),
+                                onClick = { showAddPageDialog = true }
+                            )
                         }
                     }
 
@@ -692,5 +761,35 @@ private fun CropToolButton(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/** Fila de opción del diálogo "Agregar páginas". */
+@Composable
+private fun AddPageOption(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = Color(0xFF009688), modifier = Modifier.size(26.dp))
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+        }
     }
 }
