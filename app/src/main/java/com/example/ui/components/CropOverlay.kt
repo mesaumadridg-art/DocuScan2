@@ -50,6 +50,9 @@ private fun fitRect(bitmap: Bitmap, canvas: Size): DrawRect {
     }
 }
 
+/** Separación mínima (en fracción de la imagen) entre una esquina y sus vecinas. */
+private const val MIN_GAP = 0.015f
+
 @Composable
 fun InteractiveCropCanvas(
     bitmap: Bitmap,
@@ -60,10 +63,24 @@ fun InteractiveCropCanvas(
     var activeCorner by remember { mutableStateOf<Int?>(null) } // 0: TL, 1: TR, 2: BR, 3: BL
     var containerSize by remember { mutableStateOf(Size.Zero) }
 
+    // Punto donde se apoyó el dedo y posición de la esquina en ese instante.
+    // El arrastre se mide contra este origen fijo: el punto sigue al dedo 1:1 y no depende
+    // de que la recomposición llegue entre evento y evento. Antes se sumaba el delta al
+    // último valor de estado, se perdían deltas y el punto se resistía a acercarse.
+    var dragOrigin by remember { mutableStateOf(Offset.Zero) }
+    var cornerOrigin by remember { mutableStateOf(PointF(0f, 0f)) }
+
     // El gesto NO debe reiniciarse cuando cambian las esquinas: se lee el valor actual
     // con rememberUpdatedState en vez de usar `corners` como key del pointerInput.
     val currentCorners by rememberUpdatedState(corners)
     val currentBitmap by rememberUpdatedState(bitmap)
+
+    fun pointOf(c: QuadCorners, i: Int): PointF = when (i) {
+        0 -> c.topLeft
+        1 -> c.topRight
+        2 -> c.bottomRight
+        else -> c.bottomLeft
+    }
 
     Box(
         modifier = modifier
@@ -78,53 +95,57 @@ fun InteractiveCropCanvas(
                         val touchRadius = 64.dp.toPx()
                         fun near(p: PointF) = hypot(offset.x - rect.toScreen(p).x, offset.y - rect.toScreen(p).y) < touchRadius
 
-                        activeCorner = when {
+                        val elegida = when {
                             near(c.topLeft) -> 0
                             near(c.topRight) -> 1
                             near(c.bottomRight) -> 2
                             near(c.bottomLeft) -> 3
                             else -> null
                         }
+                        activeCorner = elegida
+                        if (elegida != null) {
+                            dragOrigin = offset
+                            cornerOrigin = pointOf(c, elegida)
+                        }
                     },
-                    onDrag = { change, dragAmount ->
+                    onDrag = { change, _ ->
                         val corner = activeCorner ?: return@detectDragGestures
                         change.consume()
 
                         val rect = fitRect(currentBitmap, containerSize)
                         if (rect.w <= 0f || rect.h <= 0f) return@detectDragGestures
-                        val dx = dragAmount.x / rect.w
-                        val dy = dragAmount.y / rect.h
-                        val c = currentCorners
 
-                        // Rango siempre válido (si los puntos se cruzan, no revienta).
-                        fun clampX(v: Float, lo: Float, hi: Float) = v.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+                        // Desplazamiento TOTAL del dedo desde que apoyó (no el delta del evento):
+                        // así el punto acompaña al dedo sin acumular errores.
+                        val nx = (cornerOrigin.x + (change.position.x - dragOrigin.x) / rect.w).coerceIn(0f, 1f)
+                        val ny = (cornerOrigin.y + (change.position.y - dragOrigin.y) / rect.h).coerceIn(0f, 1f)
+                        val c = currentCorners
 
                         val updated = when (corner) {
                             0 -> c.copy(
                                 topLeft = PointF(
-                                    clampX(c.topLeft.x + dx, 0f, c.topRight.x - 0.04f),
-                                    clampX(c.topLeft.y + dy, 0f, c.bottomLeft.y - 0.04f)
+                                    nx.coerceAtMost(minOf(c.topRight.x, c.bottomRight.x) - MIN_GAP).coerceAtLeast(0f),
+                                    ny.coerceAtMost(minOf(c.bottomLeft.y, c.bottomRight.y) - MIN_GAP).coerceAtLeast(0f)
                                 )
                             )
                             1 -> c.copy(
                                 topRight = PointF(
-                                    clampX(c.topRight.x + dx, c.topLeft.x + 0.04f, 1f),
-                                    clampX(c.topRight.y + dy, 0f, c.bottomRight.y - 0.04f)
+                                    nx.coerceAtLeast(maxOf(c.topLeft.x, c.bottomLeft.x) + MIN_GAP).coerceAtMost(1f),
+                                    ny.coerceAtMost(minOf(c.bottomRight.y, c.bottomLeft.y) - MIN_GAP).coerceAtLeast(0f)
                                 )
                             )
                             2 -> c.copy(
                                 bottomRight = PointF(
-                                    clampX(c.bottomRight.x + dx, c.bottomLeft.x + 0.04f, 1f),
-                                    clampX(c.bottomRight.y + dy, c.topRight.y + 0.04f, 1f)
+                                    nx.coerceAtLeast(maxOf(c.bottomLeft.x, c.topLeft.x) + MIN_GAP).coerceAtMost(1f),
+                                    ny.coerceAtLeast(maxOf(c.topRight.y, c.topLeft.y) + MIN_GAP).coerceAtMost(1f)
                                 )
                             )
-                            3 -> c.copy(
+                            else -> c.copy(
                                 bottomLeft = PointF(
-                                    clampX(c.bottomLeft.x + dx, 0f, c.bottomRight.x - 0.04f),
-                                    clampX(c.bottomLeft.y + dy, c.topLeft.y + 0.04f, 1f)
+                                    nx.coerceAtMost(minOf(c.bottomRight.x, c.topRight.x) - MIN_GAP).coerceAtLeast(0f),
+                                    ny.coerceAtLeast(maxOf(c.topLeft.y, c.topRight.y) + MIN_GAP).coerceAtMost(1f)
                                 )
                             )
-                            else -> c
                         }
                         onCornersChanged(updated)
                     },
@@ -195,15 +216,25 @@ fun InteractiveCropCanvas(
                 drawCircle(color = Color.White, radius = 4.dp.toPx(), center = pt)
             }
 
-            // 5. Lupa: al arrastrar una esquina se amplía la zona para ver dónde queda.
+            // 5. Lupa: sigue al punto y se coloca por ENCIMA del dedo (la mano viene de abajo),
+            //    pegándose a los bordes cuando no cabe. Antes iba a una esquina fija de la
+            //    pantalla y la mano tapaba la lupa.
             val cornerIdx = activeCorner
             if (cornerIdx != null) {
                 val pt = cornerPoints[cornerIdx]
-                val radius = 62.dp.toPx()
-                val margin = 14.dp.toPx()
-                // Se coloca en el lado contrario para no tapar la esquina que se arrastra.
-                val cx = if (pt.x < canvasW / 2f) canvasW - radius - margin else radius + margin
-                val cy = if (pt.y < canvasH / 2f) canvasH - radius - margin else radius + margin
+                val radius = 58.dp.toPx()
+                val gapDedo = 46.dp.toPx()
+                val borde = 10.dp.toPx()
+
+                var cx = pt.x
+                var cy = pt.y - radius - gapDedo          // por encima del dedo
+                if (cy - radius < borde) {
+                    // No cabe arriba: se va a un costado, nunca debajo (ahí está la mano).
+                    cy = pt.y
+                    cx = if (pt.x > canvasW / 2f) pt.x - radius - gapDedo else pt.x + radius + gapDedo
+                }
+                cx = cx.coerceIn(radius + borde, (canvasW - radius - borde).coerceAtLeast(radius + borde))
+                cy = cy.coerceIn(radius + borde, (canvasH - radius - borde).coerceAtLeast(radius + borde))
 
                 val maxSide = minOf(bitmap.width, bitmap.height).toFloat()
                 val side = (bitmap.width * 0.14f).coerceIn(24f, maxSide)

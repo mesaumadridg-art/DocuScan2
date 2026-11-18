@@ -113,11 +113,17 @@ object EdgeDetector {
 
         val fw = w.toFloat()
         val fh = h.toFloat()
+        // ORDEN VISUAL: el refinamiento devuelve las esquinas en los ejes rotados de la hoja,
+        // así que refined[0] no tiene por qué ser la de arriba-izquierda en pantalla. Se
+        // reordenan por posición para que topLeft/topRight/bottomRight/bottomLeft sean las
+        // que ve el usuario (si no, al arrastrar una esquina se mueve otra y los límites
+        // usan vecinas equivocadas: el punto se puede alejar pero no acercar).
+        val ord = orderVisually(refined)
         val quad = QuadCorners(
-            topLeft = PointF((refined[0].x / fw).coerceIn(0f, 1f), (refined[0].y / fh).coerceIn(0f, 1f)),
-            topRight = PointF((refined[1].x / fw).coerceIn(0f, 1f), (refined[1].y / fh).coerceIn(0f, 1f)),
-            bottomRight = PointF((refined[2].x / fw).coerceIn(0f, 1f), (refined[2].y / fh).coerceIn(0f, 1f)),
-            bottomLeft = PointF((refined[3].x / fw).coerceIn(0f, 1f), (refined[3].y / fh).coerceIn(0f, 1f))
+            topLeft = PointF((ord[0].x / fw).coerceIn(0f, 1f), (ord[0].y / fh).coerceIn(0f, 1f)),
+            topRight = PointF((ord[1].x / fw).coerceIn(0f, 1f), (ord[1].y / fh).coerceIn(0f, 1f)),
+            bottomRight = PointF((ord[2].x / fw).coerceIn(0f, 1f), (ord[2].y / fh).coerceIn(0f, 1f)),
+            bottomLeft = PointF((ord[3].x / fw).coerceIn(0f, 1f), (ord[3].y / fh).coerceIn(0f, 1f))
         )
         val pct = (quadArea(refined) / total * 100).toInt().coerceIn(1, 100)
         return DetectionResult(
@@ -747,6 +753,26 @@ object EdgeDetector {
         val tr = intersect(lTop.first, lTop.second, lRight.first, lRight.second) ?: return null
         val br = intersect(lBottom.first, lBottom.second, lRight.first, lRight.second) ?: return null
         val bl = intersect(lBottom.first, lBottom.second, lLeft.first, lLeft.second) ?: return null
+        return arrayOf(tl, tr, br, bl)
+    }
+
+    /**
+     * Reordena cuatro esquinas a topLeft, topRight, bottomRight, bottomLeft tal como se ven
+     * en pantalla: TL suma mínima (x+y), BR suma máxima, TR máxima diferencia (x-y), BL mínima.
+     * Es el criterio estándar para documentos y no depende de la rotación de la hoja.
+     */
+    private fun orderVisually(q: Array<PointF>): Array<PointF> {
+        var tl = q[0]; var tr = q[0]; var br = q[0]; var bl = q[0]
+        var sMin = Float.MAX_VALUE; var sMax = -Float.MAX_VALUE
+        var dMax = -Float.MAX_VALUE; var dMin = Float.MAX_VALUE
+        for (p in q) {
+            val s = p.x + p.y
+            val d = p.x - p.y
+            if (s < sMin) { sMin = s; tl = p }
+            if (s > sMax) { sMax = s; br = p }
+            if (d > dMax) { dMax = d; tr = p }
+            if (d < dMin) { dMin = d; bl = p }
+        }
         return arrayOf(tl, tr, br, bl)
     }
 
