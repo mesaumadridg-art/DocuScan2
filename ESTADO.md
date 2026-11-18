@@ -5,7 +5,7 @@ Resumen técnico para retomar el desarrollo. No incluye credenciales de firma (e
 - **App**: DocuScan — escáner con detección de bordes, filtros, OCR (ML Kit latino), PDF y exportación.
 - **Paquete**: `com.aistudio.docuscan.knrvpx` · namespace `com.example`
 - **SDK**: minSdk 24 · compile/target 36.1 · AGP 9.1.1 · Gradle 9.6.0 · Kotlin 2.2.10
-- **Versión**: 1.12 (versionCode 13)
+- **Versión**: 1.15 (versionCode 16)
 
 ## Compilar
 ```bash
@@ -28,11 +28,19 @@ Salidas: TXT en Descargas, copiar, compartir, ZIP con el texto, búsqueda por co
 El PDF **no** es buscable: no se dibuja texto, solo el bitmap.
 
 ## Editor
-- Lupa al arrastrar una esquina (círculo con la zona ampliada en el lado contrario al punto).
+- Lupa que **sigue al punto** y se coloca encima del dedo (a un costado si no cabe arriba), nunca debajo.
+- Arrastre anclado al punto de apoyo (`onDragStart` guarda dedo + esquina), no por deltas acumulados: el punto acompaña al dedo 1:1.
 - Papelera en la barra: borra la página actual y vuelve a la anterior; si era la única, sale del editor.
+
+## Plantilla carnet
+- En el diálogo de guardado, `PageLayout` permite **Carnet**: junta las imágenes de dos en dos en una hoja (frente arriba, reverso abajo, etiquetas FRENTE/REVERSO y línea separadora).
+- Composición en `ImageProcessingUtils.composeCardSheet`; el emparejado ocurre en `EditorViewModel.saveDocument(layout = ...)`. Con páginas impares, la última hoja lleva solo el frente.
 
 ## Detección de bordes
 - `EdgeDetector` puntúa cada mancha por **rectangularidad** y ajusta una recta por lado; si el papel y el fondo tienen brillo parecido usa la vía de bordes (DoG + relleno). Sin confianza devuelve la imagen completa: **nunca recorta mal**.
+- Las esquinas se **reordenan visualmente** (`orderVisually`) antes de construir el `QuadCorners`; sin eso el handle editado no era el que se veía.
+- El descarte por "llena el encuadre" exige los **dos** ejes (>95 % ancho **y** alto); con uno solo se perdían marcos válidos de fotos tomadas de cerca.
+- `EditorViewModel.addPages` detecta cualquier página que llegue sin mensaje de detección (camino de la cámara incluido).
 - El filtro por defecto es `ORIGINAL`; hay 10 filtros en `DocumentFilter`.
 - Banco de pruebas y versión Python espejo del detector fuera del repo, en `proyectos/DocuScan2-deteccion`.
 
