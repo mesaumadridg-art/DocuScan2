@@ -5,9 +5,13 @@ import android.graphics.PointF
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
+import kotlin.math.sin
 
 data class DetectionResult(
     val corners: QuadCorners,
@@ -18,354 +22,754 @@ data class DetectionResult(
 /**
  * Detector de bordes de documento.
  *
- * Estrategia doble, porque un solo método falla en la mitad de los casos reales:
+ * No hay coordenadas ni umbrales fijos por caso: todo se calcula de cada foto.
  *
- *  1. Segmentación por luminancia: el papel suele ser la región más clara de la foto. Se
- *     binariza con el umbral de Otsu, se toma la componente conexa más grande y de ahí se
- *     sacan las 4 esquinas por los extremos de (x+y) y (x-y). Esto sí respeta la perspectiva
- *     (el cuadrilátero sale inclinado si la hoja está torcida).
- *  2. Gradientes: para cuando el papel ocupa casi todo el encuadre y no hay fondo oscuro que
- *     lo separe. Busca las 4 rectas de borde en los márgenes con un umbral adaptativo
- *     (media + desviación), no un múltiplo fijo de la energía media.
- *
- * Se queda con el candidato de mayor área válida; si ninguno convence, devuelve un marco
- * interior y avisa que hay que ajustar a mano.
+ *  1. La foto se lleva a 720 px y se suaviza (el ruido del sensor rompe los bordes).
+ *  2. Binarización por **Otsu**, que saca el umbral del histograma de esa foto concreta;
+ *     si casi todo sale claro se invierte la máscara. Un cierre 3x3 tapa huecos de texto.
+ *  3. Cada mancha clara se puntúa por **rectangularidad**: área de la mancha / área de su
+ *     rectángulo mínimo rotado. Una hoja real da ~0.99; una mesa, una mano o dos hojas
+ *     pegadas dan mucho menos y se descartan. Ese filtro es el que faltaba.
+ *  4. Si no aparece una mancha rectangular (dos papeles unidos por la sombra), se separan
+ *     por **transformada de distancia**: cada objeto tiene su núcleo lejos del fondo y una
+ *     partición BFS reparte la mancha entre esos núcleos.
+ *  5. Las esquinas no se sacan de los extremos de x±y (eso falla en cuanto la hoja se gira):
+ *     se ajusta una **recta por mínimos cuadrados a cada lado** y se cortan las cuatro.
+ *  6. Validación de ángulos (55°-125°). Si algo no cuadra, devuelve la imagen completa:
+ *     mejor no recortar nada que recortar mal.
  */
 object EdgeDetector {
 
-    private const val MAX_DIM = 480
-    private const val MIN_AREA_RATIO = 0.10f
-    private const val MAX_AREA_RATIO = 0.985f
-    /** Por encima de esto el "papel" es en realidad toda la foto: no hay borde que detectar. */
-    private const val FULL_FRAME_RATIO = 0.86f
+    private const val MAX_DIM = 720
+    private const val MIN_AREA_RATIO = 0.06f
+    private const val MIN_RECTANGULARITY = 0.72f
 
-    suspend fun detectPaperEdges(bitmap: Bitmap): DetectionResult = withContext(Dispatchers.Default) {
-        try {
-            val scaled = scaleDown(bitmap)
-            val w = scaled.width
-            val h = scaled.height
-            val pixels = IntArray(w * h)
-            scaled.getPixels(pixels, 0, w, 0, 0, w, h)
-            val lum = luminance(pixels)
-
-            val paperQuad = detectByLuminance(lum, w, h)
-            val gradientQuad = detectByGradient(lum, w, h)
-
-            val paperArea = paperQuad?.let { quadArea(it) } ?: 0f
-            val gradientArea = gradientQuad?.let { quadArea(it) } ?: 0f
-            val total = (w * h).toFloat()
-
-            // El papel "que llena todo" es sospechoso: en ese caso manda el gradiente.
-            val paperUsable = paperQuad != null && paperArea / total <= FULL_FRAME_RATIO
-            val chosen = when {
-                paperUsable && paperArea >= gradientArea -> paperQuad
-                gradientQuad != null && gradientArea / total >= MIN_AREA_RATIO -> gradientQuad
-                else -> paperQuad
+    suspend fun detectPaperEdges(bitmap: Bitmap): DetectionResult =
+        withContext(Dispatchers.Default) {
+            try {
+                detect(bitmap)
+            } catch (e: Exception) {
+                fallback("Ajusta las esquinas del documento a mano.")
             }
-
-            if (chosen == null) {
-                return@withContext DetectionResult(
-                    corners = insetCorners(0.04f),
-                    isDocumentDetected = false,
-                    message = "No se detectó el borde. Ajusta las 4 esquinas o usa Página completa."
-                )
-            }
-
-            val areaRatio = quadArea(chosen) / total
-            if (areaRatio < MIN_AREA_RATIO || areaRatio > MAX_AREA_RATIO || !isSaneQuad(chosen)) {
-                return@withContext DetectionResult(
-                    corners = insetCorners(0.04f),
-                    isDocumentDetected = false,
-                    message = "Bordes poco claros. Ajusta las esquinas manualmente."
-                )
-            }
-
-            DetectionResult(
-                corners = toNormalized(chosen, w, h),
-                isDocumentDetected = true,
-                message = "Documento detectado · ${(areaRatio * 100).toInt()}% del encuadre"
-            )
-        } catch (e: Exception) {
-            DetectionResult(
-                corners = insetCorners(0.05f),
-                isDocumentDetected = false,
-                message = "Ajusta las esquinas del documento"
-            )
         }
-    }
 
-    // ---------------------------------------------------------------- luminancia (papel)
+    private fun detect(bitmap: Bitmap): DetectionResult {
+        val scale = min(1f, MAX_DIM.toFloat() / max(bitmap.width, bitmap.height))
+        val w = max(32, (bitmap.width * scale).toInt())
+        val h = max(32, (bitmap.height * scale).toInt())
+        val small = if (w == bitmap.width && h == bitmap.height) bitmap
+        else Bitmap.createScaledBitmap(bitmap, w, h, true)
 
-    /** Máscara del papel por umbral de Otsu + componente conexa mayor + esquinas por extremos. */
-    private fun detectByLuminance(lum: FloatArray, w: Int, h: Int): List<PointF>? {
-        val threshold = otsuThreshold(lum).toFloat()
-        val mask = BooleanArray(lum.size)
+        val px = IntArray(w * h)
+        small.getPixels(px, 0, w, 0, 0, w, h)
+        val lum = FloatArray(px.size)
+        for (i in px.indices) {
+            val p = px[i]
+            lum[i] = 0.299f * ((p shr 16) and 0xFF) + 0.587f * ((p shr 8) and 0xFF) + 0.114f * (p and 0xFF)
+        }
+        val smooth = blur3(lum, w, h)
 
-        // El papel es claro: se prueba "claro sobre fondo oscuro" y, si sale una región
-        // absurda (casi todo o casi nada), el inverso (documento oscuro sobre mesa clara).
+        var mask = otsuMask(smooth)
         var bright = 0
-        for (i in lum.indices) {
-            if (lum[i] >= threshold) {
-                mask[i] = true
-                bright++
-            }
-        }
-        val brightRatio = bright.toFloat() / lum.size
-        if (brightRatio < 0.05f || brightRatio > 0.97f) {
-            for (i in lum.indices) mask[i] = !mask[i]
+        for (b in mask) if (b) bright++
+        if (bright > mask.size * 0.92f) {
+            for (i in mask.indices) mask[i] = !mask[i]
+            bright = mask.size - bright
         }
 
-        val component = largestComponent(mask, w, h) ?: return null
-        if (component.size < lum.size * 0.05f) return null
-
-        // Esquinas por extremos de las diagonales: con perspectiva leve esto da el cuadrilátero
-        // real, no el rectángulo envolvente.
-        var tlScore = Float.MAX_VALUE
-        var brScore = -Float.MAX_VALUE
-        var trScore = -Float.MAX_VALUE
-        var blScore = Float.MAX_VALUE
-        var tl = component[0]
-        var br = component[0]
-        var tr = component[0]
-        var bl = component[0]
-
-        for (idx in component) {
-            val x = (idx % w).toFloat()
-            val y = (idx / w).toFloat()
-            val sum = x + y
-            val diff = x - y
-            if (sum < tlScore) { tlScore = sum; tl = idx }
-            if (sum > brScore) { brScore = sum; br = idx }
-            if (diff > trScore) { trScore = diff; tr = idx }
-            if (diff < blScore) { blScore = diff; bl = idx }
+        val total = w * h
+        var corners: Array<PointF>? = null
+        if (bright >= mask.size * 0.04f) {
+            corners = solveMask(mask, w, h)
+        }
+        // Si el papel y el fondo tienen brillo parecido (mesa clara), la luminancia no
+        // separa nada: se busca el borde y se rellena el contorno.
+        if (corners == null) {
+            val edge = edgeMask(smooth, w, h)
+            if (edge != null) corners = solveMask(edge, w, h)
         }
 
-        fun pt(idx: Int) = PointF((idx % w).toFloat(), (idx / w).toFloat())
+        val refined = corners
+            ?: return fallback("No se reconoció el borde del papel. Arrastra las esquinas para ajustarlo.")
 
-        val quad = listOf(pt(tl), pt(tr), pt(br), pt(bl))
-        return expandOutward(quad, w, h, 1.5f)
+        val fw = w.toFloat()
+        val fh = h.toFloat()
+        val quad = QuadCorners(
+            topLeft = PointF((refined[0].x / fw).coerceIn(0f, 1f), (refined[0].y / fh).coerceIn(0f, 1f)),
+            topRight = PointF((refined[1].x / fw).coerceIn(0f, 1f), (refined[1].y / fh).coerceIn(0f, 1f)),
+            bottomRight = PointF((refined[2].x / fw).coerceIn(0f, 1f), (refined[2].y / fh).coerceIn(0f, 1f)),
+            bottomLeft = PointF((refined[3].x / fw).coerceIn(0f, 1f), (refined[3].y / fh).coerceIn(0f, 1f))
+        )
+        val pct = (quadArea(refined) / total * 100).toInt().coerceIn(1, 100)
+        return DetectionResult(
+            corners = quad,
+            isDocumentDetected = true,
+            message = "Documento detectado · $pct% del encuadre"
+        )
     }
 
+    /** Busca el cuadrilátero del papel dentro de una máscara ya preparada. */
+    private fun solveMask(maskIn: BooleanArray, w: Int, h: Int): Array<PointF>? {
+        val total = w * h
+        val mask = close3(maskIn, w, h)
+        var best: Candidate? = null
+        for (comp in rankedComponents(mask, w, h, total, 4)) {
+            val cand = evaluate(comp, w, h, total) ?: continue
+            if (best == null || cand.score > best.score) best = cand
+        }
+        if (best == null || best.score < MIN_RECTANGULARITY) {
+            for (cand in separateByDistance(mask, w, h, total)) {
+                if (cand.score >= MIN_RECTANGULARITY && (best == null || cand.score > best.score)) {
+                    best = cand
+                }
+            }
+        }
+        val found = best
+        if (found == null || found.score < MIN_RECTANGULARITY) return null
+        val refined = refineCorners(found, w, h) ?: return null
+        return if (isValidQuad(refined, total)) refined else null
+    }
+
+    /** Marco completo: no recorta nada. */
+    private fun fallback(message: String) = DetectionResult(
+        corners = QuadCorners(
+            topLeft = PointF(0f, 0f),
+            topRight = PointF(1f, 0f),
+            bottomRight = PointF(1f, 1f),
+            bottomLeft = PointF(0f, 1f)
+        ),
+        isDocumentDetected = false,
+        message = message
+    )
+
+    // -------------------------------------------------------------------- imagen
+
+    private fun blur3(src: FloatArray, w: Int, h: Int): FloatArray {
+        val tmp = FloatArray(src.size)
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                val x0 = if (x > 0) x - 1 else 0
+                val x1 = if (x < w - 1) x + 1 else w - 1
+                tmp[row + x] = (src[row + x0] + src[row + x] + src[row + x1]) / 3f
+            }
+        }
+        val out = FloatArray(src.size)
+        for (y in 0 until h) {
+            val y0 = if (y > 0) y - 1 else 0
+            val y1 = if (y < h - 1) y + 1 else h - 1
+            for (x in 0 until w) {
+                out[y * w + x] = (tmp[y0 * w + x] + tmp[y * w + x] + tmp[y1 * w + x]) / 3f
+            }
+        }
+        return out
+    }
+
+    private fun otsuMask(lum: FloatArray): BooleanArray {
+        val thr = otsuThreshold(lum)
+        return BooleanArray(lum.size) { lum[it] >= thr }
+    }
+
+    /** Umbral de Otsu sobre cualquier señal (luminancia o magnitud de borde). */
     private fun otsuThreshold(lum: FloatArray): Int {
         val hist = IntArray(256)
         for (v in lum) hist[v.toInt().coerceIn(0, 255)]++
         val total = lum.size
-        var sum = 0.0
-        for (i in 0..255) sum += i.toDouble() * hist[i]
+        var sumAll = 0.0
+        for (t in 0..255) sumAll += t.toDouble() * hist[t]
         var sumB = 0.0
-        var weightB = 0
-        var bestVar = -1.0
-        var threshold = 127
+        var wB = 0
+        var best = -1.0
+        var thr = 127
         for (t in 0..255) {
-            weightB += hist[t]
-            if (weightB == 0) continue
-            val weightF = total - weightB
-            if (weightF == 0) break
+            wB += hist[t]
+            if (wB == 0) continue
+            val wF = total - wB
+            if (wF == 0) break
             sumB += t.toDouble() * hist[t]
-            val meanB = sumB / weightB
-            val meanF = (sum - sumB) / weightF
-            val between = weightB.toDouble() * weightF * (meanB - meanF) * (meanB - meanF)
-            if (between > bestVar) {
-                bestVar = between
-                threshold = t
+            val mB = sumB / wB
+            val mF = (sumAll - sumB) / wF
+            val between = wB.toDouble() * wF * (mB - mF) * (mB - mF)
+            if (between > best) {
+                best = between
+                thr = t
             }
         }
-        return threshold
+        return thr
     }
 
-    /** BFS iterativo (sin recursión: una pila explícita aguanta imágenes de 480 px sin desbordar). */
-    private fun largestComponent(mask: BooleanArray, w: Int, h: Int): IntArray? {
-        val visited = BooleanArray(mask.size)
-        var best: IntArray? = null
-        val stack = IntArray(mask.size)
-        val current = IntArray(mask.size)
-
-        for (start in mask.indices) {
-            if (!mask[start] || visited[start]) continue
-            var top = 0
-            var size = 0
-            stack[top++] = start
-            visited[start] = true
-            while (top > 0) {
-                val idx = stack[--top]
-                current[size++] = idx
-                val x = idx % w
-                val y = idx / w
-                if (x > 0) {
-                    val n = idx - 1
-                    if (mask[n] && !visited[n]) { visited[n] = true; stack[top++] = n }
+    /** Cierre 3x3 (dilatar y erosionar) sin perder el borde de la mancha. */
+    private fun close3(mask: BooleanArray, w: Int, h: Int): BooleanArray {
+        val dil = BooleanArray(mask.size)
+        for (y in 0 until h) for (x in 0 until w) {
+            var on = false
+            for (dy in -1..1) {
+                val ny = y + dy
+                if (ny < 0 || ny >= h) continue
+                for (dx in -1..1) {
+                    val nx = x + dx
+                    if (nx < 0 || nx >= w) continue
+                    if (mask[ny * w + nx]) {
+                        on = true
+                        break
+                    }
                 }
-                if (x < w - 1) {
-                    val n = idx + 1
-                    if (mask[n] && !visited[n]) { visited[n] = true; stack[top++] = n }
+                if (on) break
+            }
+            dil[y * w + x] = on
+        }
+        val out = BooleanArray(mask.size)
+        for (y in 0 until h) for (x in 0 until w) {
+            var on = true
+            for (dy in -1..1) {
+                val ny = y + dy
+                if (ny < 0 || ny >= h) continue
+                for (dx in -1..1) {
+                    val nx = x + dx
+                    if (nx < 0 || nx >= w) continue
+                    if (!dil[ny * w + nx]) {
+                        on = false
+                        break
+                    }
                 }
-                if (y > 0) {
-                    val n = idx - w
-                    if (mask[n] && !visited[n]) { visited[n] = true; stack[top++] = n }
+                if (!on) break
+            }
+            out[y * w + x] = on || mask[y * w + x]
+        }
+        return out
+    }
+
+    /** Máscara por bordes (DoG) con relleno: papel y fondo con brillo parecido. */
+    private fun edgeMask(src: FloatArray, w: Int, h: Int): BooleanArray? {
+        val a = gaussian(src, w, h, 1.2f)
+        val b = gaussian(src, w, h, 6f)
+        val dog = FloatArray(src.size) { abs(a[it] - b[it]) }
+        var dmax = 1e-3f
+        for (v in dog) if (v > dmax) dmax = v
+        val scaled = FloatArray(dog.size) { dog[it] / dmax * 255f }
+        val thr = otsuThreshold(scaled)
+
+        var edges = BooleanArray(scaled.size) { scaled[it] >= thr }
+        repeat(2) { edges = dilate3(edges, w, h) }
+        edges = closeSize5(edges, w, h)
+        val filled = fillHoles(edges, w, h)
+        var interior = 0
+        val mask = BooleanArray(edges.size)
+        for (i in edges.indices) {
+            if (filled[i] && !edges[i]) {
+                mask[i] = true
+                interior++
+            }
+        }
+        if (interior < mask.size * 0.05f) return null
+        return closeSize5(mask, w, h)
+    }
+
+    /** Gaussiano separable (radio 3σ): suaviza sin destruir los bordes del papel. */
+    private fun gaussian(src: FloatArray, w: Int, h: Int, sigma: Float): FloatArray {
+        val radius = max(1, (3f * sigma).toInt())
+        val kernel = FloatArray(2 * radius + 1)
+        var sum = 0f
+        for (i in -radius..radius) {
+            val v = kotlin.math.exp(-(i * i) / (2f * sigma * sigma))
+            kernel[i + radius] = v
+            sum += v
+        }
+        for (i in kernel.indices) kernel[i] /= sum
+
+        val tmp = FloatArray(src.size)
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                var acc = 0f
+                for (k in -radius..radius) {
+                    val xx = (x + k).coerceIn(0, w - 1)
+                    acc += src[row + xx] * kernel[k + radius]
                 }
-                if (y < h - 1) {
-                    val n = idx + w
-                    if (mask[n] && !visited[n]) { visited[n] = true; stack[top++] = n }
+                tmp[row + x] = acc
+            }
+        }
+        val out = FloatArray(src.size)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var acc = 0f
+                for (k in -radius..radius) {
+                    val yy = (y + k).coerceIn(0, h - 1)
+                    acc += tmp[yy * w + x] * kernel[k + radius]
                 }
-            }
-            if (best == null || size > best.size) best = current.copyOf(size)
-        }
-        return best
-    }
-
-    // ---------------------------------------------------------------- gradientes (respaldo)
-
-    /** Busca las 4 rectas de borde con umbral adaptativo (media + desviación de la energía). */
-    private fun detectByGradient(lum: FloatArray, w: Int, h: Int): List<PointF>? {
-        val grad = FloatArray(lum.size)
-        var sumEnergy = 0f
-        var sumSquares = 0f
-        var count = 0
-        for (y in 1 until h - 1) {
-            for (x in 1 until w - 1) {
-                val idx = y * w + x
-                val gx = (lum[idx + 1] - lum[idx - 1]) +
-                    0.5f * (lum[idx + 1 - w] - lum[idx - 1 - w]) +
-                    0.5f * (lum[idx + 1 + w] - lum[idx - 1 + w])
-                val gy = (lum[idx + w] - lum[idx - w]) +
-                    0.5f * (lum[idx + w - 1] - lum[idx - w - 1]) +
-                    0.5f * (lum[idx + w + 1] - lum[idx - w + 1])
-                val mag = abs(gx) + abs(gy)
-                grad[idx] = mag
-                sumEnergy += mag
-                sumSquares += mag * mag
-                count++
+                out[y * w + x] = acc
             }
         }
-        if (count == 0) return null
-        val mean = sumEnergy / count
-        val std = sqrt(max(0f, sumSquares / count - mean * mean))
-        // Umbral adaptativo: un borde real tiene que destacar sobre el ruido de esa foto.
-        val cut = mean + std
+        return out
+    }
 
-        val band = (h * 0.6f).toInt()
-        val bandTop = (h * 0.2f).toInt()
-        val bandW = (w * 0.6f).toInt()
-        val bandLeft = (w * 0.2f).toInt()
-
-        fun bestColumn(from: Int, until: Int): Int? {
-            var bestCol: Int? = null
-            var bestScore = 0f
-            for (x in from until until) {
-                var score = 0f
-                for (y in bandTop until bandTop + band) score += grad[y * w + x]
-                if (score > bestScore) { bestScore = score; bestCol = x }
+    private fun dilate3(mask: BooleanArray, w: Int, h: Int): BooleanArray {
+        val out = BooleanArray(mask.size)
+        for (y in 0 until h) for (x in 0 until w) {
+            var on = false
+            for (dy in -1..1) {
+                val ny = y + dy
+                if (ny < 0 || ny >= h) continue
+                for (dx in -1..1) {
+                    val nx = x + dx
+                    if (nx < 0 || nx >= w) continue
+                    if (mask[ny * w + nx]) {
+                        on = true
+                        break
+                    }
+                }
+                if (on) break
             }
-            // Debe superar el umbral del 55 % de la banda (antes se exigía un 60 % fijo).
-            return if (bestScore > cut * band * 0.55f) bestCol else null
+            out[y * w + x] = on
         }
+        return out
+    }
 
-        fun bestRow(from: Int, until: Int): Int? {
-            var bestRow: Int? = null
-            var bestScore = 0f
-            for (y in from until until) {
-                var score = 0f
-                for (x in bandLeft until bandLeft + bandW) score += grad[y * w + x]
-                if (score > bestScore) { bestScore = score; bestRow = y }
+    /** Cierre con vecindad 5x5 (dilatar 2 y erosionar 2). */
+    private fun closeSize5(mask: BooleanArray, w: Int, h: Int): BooleanArray {
+        var m = dilate3(dilate3(mask, w, h), w, h)
+        m = erode3(erode3(m, w, h), w, h)
+        for (i in mask.indices) if (mask[i]) m[i] = true
+        return m
+    }
+
+    private fun erode3(mask: BooleanArray, w: Int, h: Int): BooleanArray {
+        val out = BooleanArray(mask.size)
+        for (y in 0 until h) for (x in 0 until w) {
+            var on = true
+            for (dy in -1..1) {
+                val ny = y + dy
+                if (ny < 0 || ny >= h) continue
+                for (dx in -1..1) {
+                    val nx = x + dx
+                    if (nx < 0 || nx >= w) continue
+                    if (!mask[ny * w + nx]) {
+                        on = false
+                        break
+                    }
+                }
+                if (!on) break
             }
-            return if (bestScore > cut * bandW * 0.55f) bestRow else null
+            out[y * w + x] = on
         }
-
-        val left = bestColumn((w * 0.02f).toInt(), (w * 0.42f).toInt())
-        val right = bestColumn(w - 1 - (w * 0.02f).toInt(), w - 1 - (w * 0.42f).toInt())
-        val top = bestRow((h * 0.02f).toInt(), (h * 0.42f).toInt())
-        val bottom = bestRow(h - 1 - (h * 0.02f).toInt(), h - 1 - (h * 0.42f).toInt())
-
-        if (left == null || right == null || top == null || bottom == null) return null
-        if (right - left < w * 0.25f || bottom - top < h * 0.25f) return null
-
-        return listOf(
-            PointF(left.toFloat(), top.toFloat()),
-            PointF(right.toFloat(), top.toFloat()),
-            PointF(right.toFloat(), bottom.toFloat()),
-            PointF(left.toFloat(), bottom.toFloat())
-        )
+        return out
     }
 
-    // ---------------------------------------------------------------- utilidades
-
-    private fun scaleDown(bitmap: Bitmap): Bitmap {
-        val longest = max(bitmap.width, bitmap.height)
-        if (longest <= MAX_DIM) return bitmap
-        val ratio = longest.toFloat() / MAX_DIM
-        val w = (bitmap.width / ratio).toInt().coerceAtLeast(32)
-        val h = (bitmap.height / ratio).toInt().coerceAtLeast(32)
-        return Bitmap.createScaledBitmap(bitmap, w, h, true)
-    }
-
-    private fun luminance(pixels: IntArray): FloatArray {
-        val lum = FloatArray(pixels.size)
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            lum[i] = 0.299f * r + 0.587f * g + 0.114f * b
+    /** Rellena los huecos cerrados: lo alcanzable desde el borde de la imagen no es hueco. */
+    private fun fillHoles(edges: BooleanArray, w: Int, h: Int): BooleanArray {
+        val outside = BooleanArray(edges.size)
+        val queue = IntArray(edges.size)
+        var head = 0
+        var tail = 0
+        fun seed(i: Int) {
+            if (!edges[i] && !outside[i]) {
+                outside[i] = true
+                queue[tail++] = i
+            }
         }
-        return lum
-    }
-
-    /** Separa el cuadrilátero 1-2 px hacia afuera: el borde de la máscara queda dentro del papel. */
-    private fun expandOutward(quad: List<PointF>, w: Int, h: Int, px: Float): List<PointF> {
-        val cx = quad.sumOf { it.x.toDouble() }.toFloat() / quad.size
-        val cy = quad.sumOf { it.y.toDouble() }.toFloat() / quad.size
-        return quad.map { p ->
-            val dx = p.x - cx
-            val dy = p.y - cy
-            val len = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
-            PointF(
-                (p.x + dx / len * px).coerceIn(0f, (w - 1).toFloat()),
-                (p.y + dy / len * px).coerceIn(0f, (h - 1).toFloat())
-            )
+        for (x in 0 until w) {
+            seed(x)
+            seed((h - 1) * w + x)
         }
-    }
-
-    private fun quadArea(quad: List<PointF>): Float {
-        var area = 0.0
-        for (i in quad.indices) {
-            val a = quad[i]
-            val b = quad[(i + 1) % quad.size]
-            area += a.x.toDouble() * b.y - b.x.toDouble() * a.y
+        for (y in 0 until h) {
+            seed(y * w)
+            seed(y * w + w - 1)
         }
-        return abs(area).toFloat() / 2f
-    }
-
-    /** Descarta cuadriláteros degenerados (auto-intersectados o con lados casi nulos). */
-    private fun isSaneQuad(quad: List<PointF>): Boolean {
-        if (quad.size != 4) return false
-        var sign = 0f
-        for (i in quad.indices) {
-            val a = quad[i]
-            val b = quad[(i + 1) % 4]
-            val c = quad[(i + 2) % 4]
-            val cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
-            if (abs(cross) < 1e-3f) return false
-            val s = if (cross > 0) 1f else -1f
-            if (sign == 0f) sign = s else if (sign != s) return false
+        while (head < tail) {
+            val idx = queue[head++]
+            val x = idx % w
+            if (x > 0) seed(idx - 1)
+            if (x < w - 1) seed(idx + 1)
+            if (idx - w >= 0) seed(idx - w)
+            if (idx + w < edges.size) seed(idx + w)
         }
-        return true
+        return BooleanArray(edges.size) { !outside[it] }
     }
 
-    private fun toNormalized(quad: List<PointF>, w: Int, h: Int): QuadCorners {
-        val fw = (w - 1).toFloat().coerceAtLeast(1f)
-        val fh = (h - 1).toFloat().coerceAtLeast(1f)
-        return QuadCorners(
-            topLeft = PointF((quad[0].x / fw).coerceIn(0f, 1f), (quad[0].y / fh).coerceIn(0f, 1f)),
-            topRight = PointF((quad[1].x / fw).coerceIn(0f, 1f), (quad[1].y / fh).coerceIn(0f, 1f)),
-            bottomRight = PointF((quad[2].x / fw).coerceIn(0f, 1f), (quad[2].y / fh).coerceIn(0f, 1f)),
-            bottomLeft = PointF((quad[3].x / fw).coerceIn(0f, 1f), (quad[3].y / fh).coerceIn(0f, 1f))
-        )
-    }
+    // ---------------------------------------------------------------- componentes
 
-    private fun insetCorners(inset: Float): QuadCorners = QuadCorners(
-        topLeft = PointF(inset, inset),
-        topRight = PointF(1f - inset, inset),
-        bottomRight = PointF(1f - inset, 1f - inset),
-        bottomLeft = PointF(inset, 1f - inset)
+    private data class Candidate(
+        val comp: BooleanArray,
+        val angle: Float,
+        val score: Float,
+        val areaRatio: Float
     )
+
+    private fun rankedComponents(mask: BooleanArray, w: Int, h: Int, total: Int, limit: Int): List<BooleanArray> {
+        val labels = IntArray(mask.size) { -1 }
+        val sizes = ArrayList<Int>()
+        val queue = IntArray(mask.size)
+        var nextLabel = 0
+        for (start in mask.indices) {
+            if (!mask[start] || labels[start] != -1) continue
+            var head = 0
+            var tail = 0
+            queue[tail++] = start
+            labels[start] = nextLabel
+            var count = 0
+            while (head < tail) {
+                val idx = queue[head++]
+                count++
+                val x = idx % w
+                var t = tail
+                if (x > 0) t = push(idx - 1, mask, labels, nextLabel, queue, t)
+                if (x < w - 1) t = push(idx + 1, mask, labels, nextLabel, queue, t)
+                if (idx - w >= 0) t = push(idx - w, mask, labels, nextLabel, queue, t)
+                if (idx + w < mask.size) t = push(idx + w, mask, labels, nextLabel, queue, t)
+                tail = t
+            }
+            sizes.add(count)
+            nextLabel++
+        }
+
+        val ranked = sizes.indices
+            .filter { sizes[it] >= total * MIN_AREA_RATIO && sizes[it] <= total * 0.995f }
+            .sortedByDescending { sizes[it] }
+            .take(limit)
+
+        return ranked.map { lab -> BooleanArray(mask.size) { labels[it] == lab } }
+    }
+
+    private fun push(idx: Int, mask: BooleanArray, labels: IntArray, lab: Int, queue: IntArray, tail: Int): Int {
+        if (mask[idx] && labels[idx] == -1) {
+            labels[idx] = lab
+            queue[tail] = idx
+            return tail + 1
+        }
+        return tail
+    }
+
+    private fun countTrue(a: BooleanArray): Int {
+        var c = 0
+        for (v in a) if (v) c++
+        return c
+    }
+
+    private fun evaluate(comp: BooleanArray, w: Int, h: Int, total: Int): Candidate? {
+        val area = countTrue(comp).toFloat()
+        if (area < total * MIN_AREA_RATIO) return null
+        val outline = outlineOf(comp, w, h)
+        if (outline.size < 30) return null
+        val hull = convexHull(outline) ?: return null
+        if (hull.size < 4) return null
+        val rect = minAreaRect(hull) ?: return null
+        if (rect.area <= 0f) return null
+        val score = area / rect.area
+        return Candidate(comp, rect.angle, score, area / total)
+    }
+
+    private fun outlineOf(comp: BooleanArray, w: Int, h: Int): List<PointF> {
+        val out = ArrayList<PointF>(2048)
+        for (y in 1 until h - 1) {
+            val row = y * w
+            for (x in 1 until w - 1) {
+                val i = row + x
+                if (!comp[i]) continue
+                if (!comp[i - 1] || !comp[i + 1] || !comp[i - w] || !comp[i + w]) {
+                    out.add(PointF(x.toFloat(), y.toFloat()))
+                }
+            }
+        }
+        return out
+    }
+
+    // ------------------------------------------------------ separación por distancia
+
+    private fun separateByDistance(mask: BooleanArray, w: Int, h: Int, total: Int): List<Candidate> {
+        val dist = distanceTransform(mask, w, h)
+        var dmax = 0f
+        for (v in dist) if (v > dmax) dmax = v
+        if (dmax < 3f) return emptyList()
+
+        val results = ArrayList<Candidate>()
+        for (frac in floatArrayOf(0.30f, 0.20f, 0.12f)) {
+            val limit = max(2.5f, dmax * frac)
+            val seeds = IntArray(mask.size)
+            var count = 0
+            for (i in mask.indices) {
+                if (mask[i] && dist[i] >= limit) {
+                    count++
+                    seeds[i] = count
+                }
+            }
+            if (count == 0 || count > 40) continue
+
+            val owner = partitionByBfs(mask, seeds, w, h)
+            val sizes = IntArray(count + 1)
+            for (v in owner) if (v > 0) sizes[v]++
+
+            for (lab in 1..count) {
+                if (sizes[lab] < total * MIN_AREA_RATIO) continue
+                val comp = BooleanArray(mask.size) { owner[it] == lab }
+                val cand = evaluate(comp, w, h, total) ?: continue
+                results.add(cand)
+            }
+        }
+        return results
+    }
+
+    /** Chamfer 3x3: distancia de cada píxel de la mancha al fondo. */
+    private fun distanceTransform(mask: BooleanArray, w: Int, h: Int): FloatArray {
+        val big = 1e6f
+        val d = FloatArray(mask.size) { if (mask[it]) big else 0f }
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val i = y * w + x
+                if (!mask[i]) continue
+                var m = d[i]
+                if (x > 0) m = min(m, d[i - 1] + 1f)
+                if (y > 0) {
+                    m = min(m, d[i - w] + 1f)
+                    if (x > 0) m = min(m, d[i - w - 1] + 1.414f)
+                    if (x < w - 1) m = min(m, d[i - w + 1] + 1.414f)
+                }
+                d[i] = m
+            }
+        }
+        for (y in h - 1 downTo 0) {
+            for (x in w - 1 downTo 0) {
+                val i = y * w + x
+                if (!mask[i]) continue
+                var m = d[i]
+                if (x < w - 1) m = min(m, d[i + 1] + 1f)
+                if (y < h - 1) {
+                    m = min(m, d[i + w] + 1f)
+                    if (x < w - 1) m = min(m, d[i + w + 1] + 1.414f)
+                    if (x > 0) m = min(m, d[i + w - 1] + 1.414f)
+                }
+                d[i] = m
+            }
+        }
+        return d
+    }
+
+    /** BFS multi-fuente: cada píxel de la mancha se queda con el núcleo que llega primero. */
+    private fun partitionByBfs(mask: BooleanArray, seeds: IntArray, w: Int, h: Int): IntArray {
+        val owner = IntArray(mask.size)
+        val queue = IntArray(mask.size)
+        var head = 0
+        var tail = 0
+        for (i in seeds.indices) {
+            if (seeds[i] > 0) {
+                owner[i] = seeds[i]
+                queue[tail++] = i
+            }
+        }
+        while (head < tail) {
+            val idx = queue[head++]
+            val lab = owner[idx]
+            val x = idx % w
+            if (x > 0 && mask[idx - 1] && owner[idx - 1] == 0) {
+                owner[idx - 1] = lab; queue[tail++] = idx - 1
+            }
+            if (x < w - 1 && mask[idx + 1] && owner[idx + 1] == 0) {
+                owner[idx + 1] = lab; queue[tail++] = idx + 1
+            }
+            if (idx - w >= 0 && mask[idx - w] && owner[idx - w] == 0) {
+                owner[idx - w] = lab; queue[tail++] = idx - w
+            }
+            if (idx + w < mask.size && mask[idx + w] && owner[idx + w] == 0) {
+                owner[idx + w] = lab; queue[tail++] = idx + w
+            }
+        }
+        return owner
+    }
+
+    // ------------------------------------------------------------------- geometría
+
+    private fun convexHull(points: List<PointF>): List<PointF>? {
+        if (points.size < 3) return null
+        val pts = points.sortedWith(compareBy({ it.x }, { it.y }))
+
+        fun cross(o: PointF, a: PointF, b: PointF) =
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+
+        val lower = ArrayList<PointF>()
+        for (p in pts) {
+            while (lower.size >= 2 && cross(lower[lower.size - 2], lower[lower.size - 1], p) <= 0) {
+                lower.removeAt(lower.size - 1)
+            }
+            lower.add(p)
+        }
+        val upper = ArrayList<PointF>()
+        for (i in pts.indices.reversed()) {
+            val p = pts[i]
+            while (upper.size >= 2 && cross(upper[upper.size - 2], upper[upper.size - 1], p) <= 0) {
+                upper.removeAt(upper.size - 1)
+            }
+            upper.add(p)
+        }
+        if (lower.size > 1) lower.removeAt(lower.size - 1)
+        if (upper.size > 1) upper.removeAt(upper.size - 1)
+        val hull = lower + upper
+        return if (hull.size >= 3) hull else null
+    }
+
+    private data class Rect(val angle: Float, val area: Float)
+
+    private fun minAreaRect(hull: List<PointF>): Rect? {
+        if (hull.size < 3) return null
+        var bestArea = Float.MAX_VALUE
+        var bestAngle = 0f
+        var found = false
+        for (i in hull.indices) {
+            val a = hull[i]
+            val b = hull[(i + 1) % hull.size]
+            if (abs(a.x - b.x) < 1e-4f && abs(a.y - b.y) < 1e-4f) continue
+            val ang = atan2(b.y - a.y, b.x - a.x)
+            val ca = cos(-ang)
+            val sa = sin(-ang)
+            var umin = Float.MAX_VALUE
+            var umax = -Float.MAX_VALUE
+            var vmin = Float.MAX_VALUE
+            var vmax = -Float.MAX_VALUE
+            for (p in hull) {
+                val u = p.x * ca - p.y * sa
+                val v = p.x * sa + p.y * ca
+                if (u < umin) umin = u
+                if (u > umax) umax = u
+                if (v < vmin) vmin = v
+                if (v > vmax) vmax = v
+            }
+            val area = (umax - umin) * (vmax - vmin)
+            if (area < bestArea) {
+                bestArea = area
+                bestAngle = ang
+                found = true
+            }
+        }
+        return if (found) Rect(bestAngle, bestArea) else null
+    }
+
+    private fun fitLine(points: List<PointF>): Pair<PointF, PointF>? {
+        if (points.size < 8) return null
+        var mx = 0f
+        var my = 0f
+        for (p in points) {
+            mx += p.x
+            my += p.y
+        }
+        mx /= points.size
+        my /= points.size
+        var sxx = 0f
+        var syy = 0f
+        var sxy = 0f
+        for (p in points) {
+            val dx = p.x - mx
+            val dy = p.y - my
+            sxx += dx * dx
+            syy += dy * dy
+            sxy += dx * dy
+        }
+        val theta = 0.5f * atan2(2f * sxy, sxx - syy)
+        return PointF(mx, my) to PointF(cos(theta), sin(theta))
+    }
+
+    private fun intersect(c1: PointF, d1: PointF, c2: PointF, d2: PointF): PointF? {
+        val den = d1.x * d2.y - d1.y * d2.x
+        if (abs(den) < 1e-6f) return null
+        val t = ((c2.x - c1.x) * d2.y - (c2.y - c1.y) * d2.x) / den
+        return PointF(c1.x + d1.x * t, c1.y + d1.y * t)
+    }
+
+    /** Una recta por lado (mínimos cuadrados) y corte de las cuatro. */
+    private fun refineCorners(cand: Candidate, w: Int, h: Int): Array<PointF>? {
+        val outline = outlineOf(cand.comp, w, h)
+        if (outline.size < 40) return null
+
+        val ca = cos(-cand.angle)
+        val sa = sin(-cand.angle)
+        var umin = Float.MAX_VALUE
+        var umax = -Float.MAX_VALUE
+        var vmin = Float.MAX_VALUE
+        var vmax = -Float.MAX_VALUE
+        val us = FloatArray(outline.size)
+        val vs = FloatArray(outline.size)
+        for (i in outline.indices) {
+            val p = outline[i]
+            val u = p.x * ca - p.y * sa
+            val v = p.x * sa + p.y * ca
+            us[i] = u
+            vs[i] = v
+            if (u < umin) umin = u
+            if (u > umax) umax = u
+            if (v < vmin) vmin = v
+            if (v > vmax) vmax = v
+        }
+        val uw = umax - umin
+        val vh = vmax - vmin
+        if (uw < 20f || vh < 20f) return null
+
+        val bandU = uw * 0.06f
+        val bandV = vh * 0.06f
+        val top = ArrayList<PointF>()
+        val bottom = ArrayList<PointF>()
+        val left = ArrayList<PointF>()
+        val right = ArrayList<PointF>()
+        for (i in outline.indices) {
+            val u = us[i]
+            val v = vs[i]
+            if (u > umin + uw * 0.12f && u < umax - uw * 0.12f) {
+                if (v - vmin < bandV) top.add(outline[i])
+                if (vmax - v < bandV) bottom.add(outline[i])
+            }
+            if (v > vmin + vh * 0.12f && v < vmax - vh * 0.12f) {
+                if (u - umin < bandU) left.add(outline[i])
+                if (umax - u < bandU) right.add(outline[i])
+            }
+        }
+
+        val lTop = fitLine(top) ?: return null
+        val lBottom = fitLine(bottom) ?: return null
+        val lLeft = fitLine(left) ?: return null
+        val lRight = fitLine(right) ?: return null
+
+        val tl = intersect(lTop.first, lTop.second, lLeft.first, lLeft.second) ?: return null
+        val tr = intersect(lTop.first, lTop.second, lRight.first, lRight.second) ?: return null
+        val br = intersect(lBottom.first, lBottom.second, lRight.first, lRight.second) ?: return null
+        val bl = intersect(lBottom.first, lBottom.second, lLeft.first, lLeft.second) ?: return null
+        return arrayOf(tl, tr, br, bl)
+    }
+
+    private fun isValidQuad(q: Array<PointF>, total: Int): Boolean {
+        // Esquinas casi rectas...
+        for (i in 0..3) {
+            val a = q[(i + 3) % 4]
+            val b = q[i]
+            val c = q[(i + 1) % 4]
+            val v1x = a.x - b.x
+            val v1y = a.y - b.y
+            val v2x = c.x - b.x
+            val v2y = c.y - b.y
+            val n1 = hypot(v1x, v1y)
+            val n2 = hypot(v2x, v2y)
+            if (n1 < 8f || n2 < 8f) return false
+            val cosv = ((v1x * v2x + v1y * v2y) / (n1 * n2)).coerceIn(-1f, 1f)
+            val deg = Math.toDegrees(acos(cosv).toDouble()).toFloat()
+            if (deg < 65f || deg > 115f) return false
+        }
+        // ...y lados opuestos casi paralelos: eso descarta manchas casuales.
+        for (i in 0..1) {
+            val e1x = q[(i + 1) % 4].x - q[i].x
+            val e1y = q[(i + 1) % 4].y - q[i].y
+            val e2x = q[(i + 3) % 4].x - q[(i + 2) % 4].x
+            val e2y = q[(i + 3) % 4].y - q[(i + 2) % 4].y
+            val n1 = hypot(e1x, e1y)
+            val n2 = hypot(e2x, e2y)
+            if (n1 < 1f || n2 < 1f) return false
+            val cosang = abs((e1x * e2x + e1y * e2y) / (n1 * n2)).coerceIn(0f, 1f)
+            if (Math.toDegrees(acos(cosang).toDouble()) > 18.0) return false
+        }
+        return quadArea(q) > total * 0.03f
+    }
+
+    private fun quadArea(q: Array<PointF>): Float {
+        var s = 0f
+        for (i in 0..3) {
+            val a = q[i]
+            val b = q[(i + 1) % 4]
+            s += a.x * b.y - b.x * a.y
+        }
+        return abs(s) / 2f
+    }
 }

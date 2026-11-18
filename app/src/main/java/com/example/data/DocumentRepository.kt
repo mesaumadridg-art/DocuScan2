@@ -21,7 +21,7 @@ import java.util.Locale
 data class DocumentPageSpec(
     val rawBitmap: Bitmap,
     val corners: QuadCorners,
-    val filter: DocumentFilter = DocumentFilter.DOC_ENHANCE,
+    val filter: DocumentFilter = DocumentFilter.ORIGINAL,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val rotationDegrees: Int = 0
@@ -173,7 +173,7 @@ class DocumentRepository(
         documentId: Long,
         rawBitmap: Bitmap,
         corners: QuadCorners,
-        filter: DocumentFilter = DocumentFilter.DOC_ENHANCE,
+        filter: DocumentFilter = DocumentFilter.ORIGINAL,
         pageSize: PdfPageSize = PdfPageSize.LETTER
     ): Long = withContext(Dispatchers.IO) {
         val existingPages = pageDao.getPagesListForDocument(documentId)

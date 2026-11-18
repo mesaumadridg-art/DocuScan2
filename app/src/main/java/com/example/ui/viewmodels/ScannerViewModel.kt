@@ -33,7 +33,7 @@ data class DraftPage(
     val id: String = java.util.UUID.randomUUID().toString(),
     val rawBitmap: Bitmap,
     val corners: QuadCorners,
-    val filter: DocumentFilter = DocumentFilter.DOC_ENHANCE,
+    val filter: DocumentFilter = DocumentFilter.ORIGINAL,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val rotation: Int = 0,
