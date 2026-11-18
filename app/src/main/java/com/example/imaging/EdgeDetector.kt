@@ -92,6 +92,25 @@ object EdgeDetector {
         val refined = corners
             ?: return fallback("No se reconoció el borde del papel. Arrastra las esquinas para ajustarlo.")
 
+        // Si el cuadrilátero ocupa casi todo el encuadre no hay nada que recortar: el marco
+        // sería inútil (y en una foto mal encuadrada, directamente un error). Mejor dejarlo
+        // completo y decirlo.
+        var minX = 1f
+        var maxX = 0f
+        var minY = 1f
+        var maxY = 0f
+        for (p in refined) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+        }
+        val spanX = (maxX - minX) / w
+        val spanY = (maxY - minY) / h
+        if (spanX > 0.94f || spanY > 0.94f) {
+            return fallback("El documento ocupa casi todo el encuadre. Arrastra las esquinas si quieres ajustar el borde.")
+        }
+
         val fw = w.toFloat()
         val fh = h.toFloat()
         val quad = QuadCorners(
