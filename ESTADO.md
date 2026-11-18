@@ -5,7 +5,7 @@ Resumen técnico para retomar el desarrollo. No incluye credenciales de firma (e
 - **App**: DocuScan — escáner con detección de bordes, filtros, OCR (ML Kit latino), PDF y exportación.
 - **Paquete**: `com.aistudio.docuscan.knrvpx` · namespace `com.example`
 - **SDK**: minSdk 24 · compile/target 36.1 · AGP 9.1.1 · Gradle 9.6.0 · Kotlin 2.2.10
-- **Versión**: 1.10 (versionCode 11)
+- **Versión**: 1.12 (versionCode 13)
 
 ## Compilar
 ```bash
@@ -26,6 +26,10 @@ Para `assembleDebug` hace falta un `debug.keystore` en la raíz del proyecto.
 Al guardar se ejecuta OCR en background por página: guarda `PageEntity.ocrText` y consolidado en `DocumentEntity.combinedOcrText`.
 Salidas: TXT en Descargas, copiar, compartir, ZIP con el texto, búsqueda por contenido y OCR de una foto suelta en Herramientas.
 El PDF **no** es buscable: no se dibuja texto, solo el bitmap.
+
+## Editor
+- Lupa al arrastrar una esquina (círculo con la zona ampliada en el lado contrario al punto).
+- Papelera en la barra: borra la página actual y vuelve a la anterior; si era la única, sale del editor.
 
 ## Detección de bordes
 - `EdgeDetector` puntúa cada mancha por **rectangularidad** y ajusta una recta por lado; si el papel y el fondo tienen brillo parecido usa la vía de bordes (DoG + relleno). Sin confianza devuelve la imagen completa: **nunca recorta mal**.
