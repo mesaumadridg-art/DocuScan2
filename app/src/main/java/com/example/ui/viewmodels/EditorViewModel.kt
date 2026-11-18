@@ -155,7 +155,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (idx in list.indices) {
             list.removeAt(idx)
             _pages.value = list
-            _currentPageIndex.value = if (idx >= list.size) (list.size - 1).coerceAtLeast(0) else idx
+            // Al borrar, volver a la página anterior para decidir si se agrega otra.
+            _currentPageIndex.value = (idx - 1).coerceIn(0, (list.size - 1).coerceAtLeast(0))
             updateCurrentPreview()
         }
     }

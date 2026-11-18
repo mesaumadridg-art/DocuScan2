@@ -17,10 +17,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
@@ -190,6 +193,47 @@ fun InteractiveCropCanvas(
                     center = pt
                 )
                 drawCircle(color = Color.White, radius = 4.dp.toPx(), center = pt)
+            }
+
+            // 5. Lupa: al arrastrar una esquina se amplía la zona para ver dónde queda.
+            val cornerIdx = activeCorner
+            if (cornerIdx != null) {
+                val pt = cornerPoints[cornerIdx]
+                val radius = 62.dp.toPx()
+                val margin = 14.dp.toPx()
+                // Se coloca en el lado contrario para no tapar la esquina que se arrastra.
+                val cx = if (pt.x < canvasW / 2f) canvasW - radius - margin else radius + margin
+                val cy = if (pt.y < canvasH / 2f) canvasH - radius - margin else radius + margin
+
+                val maxSide = minOf(bitmap.width, bitmap.height).toFloat()
+                val side = (bitmap.width * 0.14f).coerceIn(24f, maxSide)
+                val srcX = (pt.x - rect.x) / rect.w * bitmap.width
+                val srcY = (pt.y - rect.y) / rect.h * bitmap.height
+                val sx = (srcX - side / 2f).coerceIn(0f, (bitmap.width - side).coerceAtLeast(0f))
+                val sy = (srcY - side / 2f).coerceIn(0f, (bitmap.height - side).coerceAtLeast(0f))
+
+                val lens = Offset(cx, cy)
+                drawLine(color = Color(0x66FFFFFF), start = pt, end = lens, strokeWidth = 1.dp.toPx())
+
+                val circle = Path().apply {
+                    addOval(Rect(cx - radius, cy - radius, cx + radius, cy + radius))
+                }
+                clipPath(circle) {
+                    drawImage(
+                        image = composeBitmap,
+                        srcOffset = IntOffset(sx.toInt(), sy.toInt()),
+                        srcSize = IntSize(side.toInt(), side.toInt()),
+                        dstOffset = IntOffset((cx - radius).toInt(), (cy - radius).toInt()),
+                        dstSize = IntSize((radius * 2).toInt(), (radius * 2).toInt()),
+                        filterQuality = FilterQuality.High
+                    )
+                }
+                drawCircle(color = Color.White, radius = radius, center = lens, style = Stroke(width = 3.dp.toPx()))
+                drawCircle(color = Color(0xFF00B4D8), radius = radius + 2.5.dp.toPx(), center = lens, style = Stroke(width = 2.dp.toPx()))
+                // punto de mira
+                drawLine(Color.White, Offset(cx - 12.dp.toPx(), cy), Offset(cx + 12.dp.toPx(), cy), strokeWidth = 1.5.dp.toPx())
+                drawLine(Color.White, Offset(cx, cy - 12.dp.toPx()), Offset(cx, cy + 12.dp.toPx()), strokeWidth = 1.5.dp.toPx())
+                drawCircle(color = Color(0xFF00B4D8), radius = 2.5.dp.toPx(), center = lens)
             }
         }
     }

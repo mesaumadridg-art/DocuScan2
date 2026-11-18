@@ -436,6 +436,31 @@ fun DocumentCropAndFilterScreen(
                 }
             }
 
+            IconButton(
+                onClick = {
+                    val eraLaUltima = pages.size <= 1
+                    editorViewModel.deleteCurrentPage()
+                    if (eraLaUltima) {
+                        Toast.makeText(context, "No quedan páginas: vuelve a capturar o importar", Toast.LENGTH_SHORT).show()
+                        onNavigateBack()
+                    } else {
+                        Toast.makeText(context, "Página eliminada", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(40.dp)
+                    .background(Color(0x33FF5252), CircleShape)
+                    .testTag("delete_current_page_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Eliminar esta página",
+                    tint = Color(0xFFFF5252),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
             Button(
                 onClick = { showSaveDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B), contentColor = Color.White),
