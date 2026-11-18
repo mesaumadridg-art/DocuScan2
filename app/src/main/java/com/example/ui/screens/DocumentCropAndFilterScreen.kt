@@ -120,6 +120,7 @@ fun DocumentCropAndFilterScreen(
     var activeTab by remember { mutableStateOf(EditModeTab.CROP) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showAddPageDialog by remember { mutableStateOf(false) }
+    var savingLayout by remember { mutableStateOf(com.example.data.PageLayout.COMPLETA) }
 
     // Añadir páginas desde la galería sin salir del editor.
     val addFromGalleryLauncher = rememberLauncherForActivityResult(
@@ -316,6 +317,57 @@ fun DocumentCropAndFilterScreen(
                             )
                         }
                     }
+
+                    // Plantilla de la hoja: una imagen por página, o carnet (frente y reverso juntos).
+                    if (pages.size >= 2) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Diseño de la hoja:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(com.example.data.PageLayout.COMPLETA, com.example.data.PageLayout.CARNET).forEach { lay ->
+                                val isSel = savingLayout == lay
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSel) brandAction() else MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("layout_${lay.name}")
+                                        .clickable { savingLayout = lay }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = lay.displayName,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = if (isSel) brandActionContent() else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = lay.subtitle,
+                                            fontSize = 10.sp,
+                                            color = if (isSel) brandActionContent() else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (savingLayout == com.example.data.PageLayout.CARNET) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Se juntan de dos en dos: la primera imagen va como frente y la segunda como reverso, en la misma hoja.",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -324,6 +376,7 @@ fun DocumentCropAndFilterScreen(
                         editorViewModel.saveDocument(
                             title = documentTitleInput,
                             pageSize = selectedPageSize,
+                            layout = savingLayout,
                             onSuccess = { docId ->
                                 coroutineScope.launch {
                                     if (selectedFormat == com.example.data.ExportFormat.JPG || selectedFormat == com.example.data.ExportFormat.PNG) {

@@ -26,6 +26,17 @@ enum class PdfQuality(val compressionQuality: Int) {
     HIGH(95), MEDIUM(80), LOW(60)
 }
 
+/**
+ * Cómo se reparten las páginas en el PDF.
+ *  - COMPLETA: una hoja por imagen (lo de siempre).
+ *  - CARNET:   dos imágenes por hoja, frente arriba y reverso abajo; para documentos
+ *              de identidad que se archivan juntos.
+ */
+enum class PageLayout(val displayName: String, val subtitle: String) {
+    COMPLETA("Una por hoja", "Cada imagen ocupa su propia página"),
+    CARNET("Carnet", "Frente y reverso en la misma hoja")
+}
+
 data class UserPreferences(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val defaultPageSize: PdfPageSize = PdfPageSize.LETTER,

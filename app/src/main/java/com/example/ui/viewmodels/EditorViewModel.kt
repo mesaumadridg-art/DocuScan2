@@ -12,6 +12,7 @@ import com.example.data.DocumentPageSpec
 import com.example.data.DocumentRepository
 import com.example.data.FileManager
 import com.example.data.PdfPageSize
+import com.example.data.PageLayout
 import com.example.imaging.DocumentFilter
 import com.example.imaging.EdgeDetector
 import com.example.imaging.ImageProcessingUtils
@@ -265,6 +266,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         title: String,
         folderId: Long? = null,
         pageSize: PdfPageSize = PdfPageSize.LETTER,
+        layout: PageLayout = PageLayout.COMPLETA,
         onSuccess: (Long) -> Unit,
         onError: (String) -> Unit = {}
     ) {
@@ -279,15 +281,53 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val docTitle = title.trim().ifBlank {
                     "DocuScan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}"
                 }
-                val pageSpecs = _pages.value.map { draft ->
-                    DocumentPageSpec(
-                        rawBitmap = draft.rawBitmap,
-                        corners = draft.corners,
-                        filter = draft.filter,
-                        brightness = draft.brightness,
-                        contrast = draft.contrast,
-                        rotationDegrees = draft.rotation
-                    )
+                val pageSpecs = if (layout == PageLayout.CARNET) {
+                    // Carnet: se procesan las páginas y se pegan de dos en dos (frente y
+                    // reverso) en una sola hoja, así el PDF no las separa.
+                    val procesadas = _pages.value.map { d ->
+                        val rot = if (d.rotation != 0) {
+                            ImageProcessingUtils.rotateBitmap(d.rawBitmap, d.rotation)
+                        } else d.rawBitmap
+                        val warped = ImageProcessingUtils.warpPerspective(rot, d.corners)
+                        ImageProcessingUtils.applyAdjustmentsAndFilter(
+                            source = warped,
+                            filter = d.filter,
+                            brightness = d.brightness,
+                            contrast = d.contrast
+                        )
+                    }
+                    val ratio = when (pageSize) {
+                        PdfPageSize.OFICIO -> 936f / 612f
+                        PdfPageSize.LEGAL -> 1008f / 612f
+                        PdfPageSize.A4 -> 842f / 595f
+                        else -> 792f / 612f
+                    }
+                    val sheetW = 1240
+                    val sheetH = (sheetW * ratio).toInt()
+                    procesadas.chunked(2).map { par ->
+                        val hoja = ImageProcessingUtils.composeCardSheet(
+                            front = par[0],
+                            back = par.getOrNull(1),
+                            sheetWidth = sheetW,
+                            sheetHeight = sheetH
+                        )
+                        DocumentPageSpec(
+                            rawBitmap = hoja,
+                            corners = QuadCorners(),
+                            filter = DocumentFilter.ORIGINAL
+                        )
+                    }
+                } else {
+                    _pages.value.map { draft ->
+                        DocumentPageSpec(
+                            rawBitmap = draft.rawBitmap,
+                            corners = draft.corners,
+                            filter = draft.filter,
+                            brightness = draft.brightness,
+                            contrast = draft.contrast,
+                            rotationDegrees = draft.rotation
+                        )
+                    }
                 }
 
                 val docId = repository.createDocument(

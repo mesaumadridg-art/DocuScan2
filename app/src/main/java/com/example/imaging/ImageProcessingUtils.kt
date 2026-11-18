@@ -337,4 +337,60 @@ object ImageProcessingUtils {
         }
         return 128
     }
+
+    /**
+     * Arma una hoja con dos imágenes apiladas (frente y reverso de un carnet) sobre fondo
+     * blanco, con la proporción de la hoja indicada. Cada imagen se escala completa, sin
+     * deformarse ni recortarse.
+     */
+    fun composeCardSheet(
+        front: Bitmap,
+        back: Bitmap?,
+        sheetWidth: Int = 1240,
+        sheetHeight: Int = 1604,
+        withLabels: Boolean = true
+    ): Bitmap {
+        val sheet = Bitmap.createBitmap(sheetWidth, sheetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(sheet)
+        canvas.drawColor(Color.WHITE)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(96, 96, 96)
+            textSize = sheetHeight * 0.020f
+            isFakeBoldText = true
+            letterSpacing = 0.12f
+        }
+        // Línea tenue entre las dos caras, para que no se confundan al imprimir.
+        val divider = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(214, 214, 214)
+            strokeWidth = sheetHeight * 0.0015f
+        }
+
+        val marginX = sheetWidth * 0.07f
+        val slotH = sheetHeight * 0.395f
+        val topStart = sheetHeight * 0.105f
+        val bottomStart = sheetHeight * 0.545f
+        val usableW = sheetWidth - 2 * marginX
+
+        fun drawSlot(img: Bitmap, top: Float, label: String) {
+            val scale = minOf(usableW / img.width.toFloat(), slotH / img.height.toFloat())
+            val w = img.width * scale
+            val h = img.height * scale
+            val left = (sheetWidth - w) / 2f
+            val t = top + (slotH - h) / 2f
+            if (withLabels) {
+                canvas.drawText(label, left, top - sheetHeight * 0.014f, labelPaint)
+            }
+            canvas.drawBitmap(img, null, android.graphics.RectF(left, t, left + w, t + h), paint)
+        }
+
+        drawSlot(front, topStart, "FRENTE")
+        if (back != null) {
+            val midY = sheetHeight * 0.515f
+            canvas.drawLine(marginX, midY, sheetWidth - marginX, midY, divider)
+            drawSlot(back, bottomStart, "REVERSO")
+        }
+        return sheet
+    }
 }
