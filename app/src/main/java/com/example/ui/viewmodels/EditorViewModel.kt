@@ -162,8 +162,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun addPages(newDrafts: List<DraftPage>) {
-        _pages.value = _pages.value + newDrafts
-        updateCurrentPreview()
+        if (newDrafts.isEmpty()) return
+        // Las páginas que llegan sin mensaje de detección (p. ej. desde la cámara, o de un
+        // camino nuevo) se detectan acá antes de agregarlas. Antes se sumaban tal cual y la
+        // segunda página aparecía con el marco en toda la foto.
+        viewModelScope.launch(Dispatchers.IO) {
+            val listas = newDrafts.map { d ->
+                if (d.detectionMessage.isNotBlank()) d
+                else {
+                    val det = EdgeDetector.detectPaperEdges(d.rawBitmap)
+                    d.copy(
+                        corners = det.corners,
+                        isAutoDetected = det.isDocumentDetected,
+                        detectionMessage = det.message
+                    )
+                }
+            }
+            withContext(Dispatchers.Main) {
+                _pages.value = _pages.value + listas
+                _currentPageIndex.value = _pages.value.lastIndex
+                updateCurrentPreview()
+            }
+        }
     }
 
     fun clearPages() {
