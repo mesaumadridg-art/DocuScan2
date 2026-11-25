@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -71,6 +72,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.imaging.DetectionResult
+import com.example.imaging.LiveEdgeAnalyzer
+import java.util.concurrent.Executors
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -124,9 +128,58 @@ fun CameraScannerScreen(
 
     val imageCapture = remember {
         ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setFlashMode(flashMode)
             .build()
+    }
+
+    // --- Detección en vivo ---------------------------------------------------
+    var deteccionViva by remember { mutableStateOf<DetectionResult?>(null) }
+    var autoCaptura by remember { mutableStateOf(false) }
+    val hiloAnalisis = remember { Executors.newSingleThreadExecutor() }
+
+    val capturar: () -> Unit = remember {
+        {
+            if (!scannerViewModel.isProcessingCapture.value) {
+                val executor = ContextCompat.getMainExecutor(context)
+                imageCapture.takePicture(
+                    executor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
+                            scannerViewModel.processCapturedImageProxy(image) {
+                                if (!scannerViewModel.isBatchMode.value) onNavigateToEditor()
+                            }
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            exception.printStackTrace()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    val analizador = remember {
+        LiveEdgeAnalyzer(
+            hayCapturaEnCurso = { scannerViewModel.isProcessingCapture.value },
+            onDeteccion = { deteccionViva = it },
+            onCuadroEstable = { if (autoCaptura) capturar() }
+        )
+    }
+
+    val analisis = remember {
+        ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { it.setAnalyzer(hiloAnalisis, analizador) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            analizador.activo = false
+            hiloAnalisis.shutdown()
+        }
     }
 
     LaunchedEffect(flashMode) {
@@ -219,7 +272,8 @@ fun CameraScannerScreen(
                             ctx as androidx.lifecycle.LifecycleOwner,
                             cameraSelector,
                             preview,
-                            imageCapture
+                            imageCapture,
+                            analisis
                         )
                     } catch (exc: Exception) {
                         exc.printStackTrace()
@@ -247,7 +301,8 @@ fun CameraScannerScreen(
                             context as androidx.lifecycle.LifecycleOwner,
                             cameraSelector,
                             preview,
-                            imageCapture
+                            imageCapture,
+                            analisis
                         )
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -268,7 +323,8 @@ fun CameraScannerScreen(
                     .fillMaxSize()
                     .border(
                         width = 1.5.dp,
-                        color = Color.White.copy(alpha = 0.45f),
+                        color = if (deteccionViva?.isDocumentDetected == true) Color(0xFF00C853)
+                        else Color.White.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(16.dp)
                     )
             ) {
@@ -353,6 +409,23 @@ fun CameraScannerScreen(
             }
 
             Row {
+                // Captura automática
+                IconButton(
+                    onClick = { autoCaptura = !autoCaptura },
+                    modifier = Modifier
+                        .background(
+                            if (autoCaptura) Color(0xFF009688) else Color(0x66000000),
+                            CircleShape
+                        )
+                        .size(44.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = "Captura automática",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
                 // Flash toggle
                 IconButton(
                     onClick = { scannerViewModel.toggleFlash() },

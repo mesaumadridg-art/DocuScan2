@@ -44,17 +44,17 @@ object EdgeDetector {
     private const val MIN_AREA_RATIO = 0.06f
     private const val MIN_RECTANGULARITY = 0.72f
 
-    suspend fun detectPaperEdges(bitmap: Bitmap): DetectionResult =
+    suspend fun detectPaperEdges(bitmap: Bitmap, maxDim: Int = MAX_DIM): DetectionResult =
         withContext(Dispatchers.Default) {
             try {
-                detect(bitmap)
+                detect(bitmap, maxDim)
             } catch (e: Exception) {
                 fallback("Ajusta las esquinas del documento a mano.")
             }
         }
 
-    private fun detect(bitmap: Bitmap): DetectionResult {
-        val scale = min(1f, MAX_DIM.toFloat() / max(bitmap.width, bitmap.height))
+    private fun detect(bitmap: Bitmap, maxDim: Int = MAX_DIM): DetectionResult {
+        val scale = min(1f, maxDim.toFloat() / max(bitmap.width, bitmap.height))
         val w = max(32, (bitmap.width * scale).toInt())
         val h = max(32, (bitmap.height * scale).toInt())
         val small = if (w == bitmap.width && h == bitmap.height) bitmap
