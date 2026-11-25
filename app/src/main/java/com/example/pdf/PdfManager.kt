@@ -98,11 +98,11 @@ class PdfManager(
             }
 
             val targetLong = PdfWriter.targetLongestSide(sheetW, sheetH, config.quality.dpi)
+            // Se reduce solo mientras la imagen siga siendo mayor que el objetivo: antes se
+            // dividía entre dos de más y una página ya correcta salía a la mitad.
+            val longestSource = maxOf(bounds.outWidth, bounds.outHeight)
             var sample = 1
-            while (
-                bounds.outWidth / (sample * 2) >= targetLong / 2 ||
-                bounds.outHeight / (sample * 2) >= targetLong / 2
-            ) {
+            while (longestSource / (sample * 2) >= targetLong) {
                 sample *= 2
             }
             val opts = BitmapFactory.Options().apply {

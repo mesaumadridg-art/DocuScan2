@@ -31,7 +31,13 @@ import java.util.Locale
 
 data class DraftPage(
     val id: String = java.util.UUID.randomUUID().toString(),
+    /** Bitmap de trabajo (2200 px): pantalla, detección y miniaturas. */
     val rawBitmap: Bitmap,
+    /**
+     * JPEG original de la cámara o la galería. Se guarda para exportar a resolución completa:
+     * el bitmap de trabajo pierde detalle y hasta ahora el PDF salía limitado por él.
+     */
+    val sourceJpeg: ByteArray? = null,
     val corners: QuadCorners,
     val filter: DocumentFilter = DocumentFilter.ORIGINAL,
     val brightness: Float = 0f,
@@ -110,6 +116,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 val detection = EdgeDetector.detectPaperEdges(bitmap)
                 val draft = DraftPage(
                     rawBitmap = bitmap,
+                    sourceJpeg = bytes,
                     corners = detection.corners,
                     isAutoDetected = detection.isDocumentDetected,
                     detectionMessage = detection.message
@@ -148,6 +155,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         newDrafts.add(
                             DraftPage(
                                 rawBitmap = bitmap,
+                                sourceJpeg = bytes,
                                 corners = detection.corners,
                                 isAutoDetected = detection.isDocumentDetected,
                                 detectionMessage = detection.message

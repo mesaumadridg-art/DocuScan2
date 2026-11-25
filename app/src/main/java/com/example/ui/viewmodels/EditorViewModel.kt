@@ -202,13 +202,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             for (uri in uris) {
                 try {
                     val input = app.contentResolver.openInputStream(uri)
-                    val bitmap = BitmapFactory.decodeStream(input)
-                    input?.close()
+                    val bytes = input?.use { it.readBytes() }
+                    // Bitmap de trabajo reducido (el original se conserva en bytes para exportar).
+                    val bitmap = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
                     if (bitmap != null) {
                         val detection = EdgeDetector.detectPaperEdges(bitmap)
                         newDrafts.add(
                             DraftPage(
                                 rawBitmap = bitmap,
+                                sourceJpeg = bytes,
                                 corners = detection.corners,
                                 isAutoDetected = detection.isDocumentDetected,
                                 detectionMessage = detection.message
@@ -325,7 +327,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                             filter = draft.filter,
                             brightness = draft.brightness,
                             contrast = draft.contrast,
-                            rotationDegrees = draft.rotation
+                            rotationDegrees = draft.rotation,
+                            // Con el JPEG original el PDF sale desde la foto completa, no desde
+                            // el bitmap de trabajo de 2200 px.
+                            rawJpeg = draft.sourceJpeg
                         )
                     }
                 }

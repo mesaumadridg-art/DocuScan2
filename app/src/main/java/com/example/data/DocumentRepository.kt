@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.example.imaging.DocumentFilter
 import com.example.imaging.ImageProcessingUtils
 import com.example.imaging.QuadCorners
@@ -24,7 +25,12 @@ data class DocumentPageSpec(
     val filter: DocumentFilter = DocumentFilter.ORIGINAL,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
-    val rotationDegrees: Int = 0
+    val rotationDegrees: Int = 0,
+    /**
+     * JPEG original cuando se dispone de él. Si viene, el procesado (recorte + filtro) se hace
+     * desde la foto completa y `rawBitmap` solo se guarda como original para re-editar.
+     */
+    val rawJpeg: ByteArray? = null
 )
 
 class DocumentRepository(
@@ -79,13 +85,26 @@ class DocumentRepository(
         var firstThumbnailPath: String? = null
 
         for ((index, spec) in pages.withIndex()) {
+            // Si hay JPEG original se procesa desde la foto completa; el bitmap de trabajo (2200 px)
+            // se guarda como original para re-editar. Se decodifica de una en una para no tener
+            // seis fotos de 12 MP en memoria a la vez.
+            val fullBitmap = spec.rawJpeg?.let {
+                try {
+                    BitmapFactory.decodeByteArray(it, 0, it.size)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val source = fullBitmap ?: spec.rawBitmap
+
             val rotatedRaw = if (spec.rotationDegrees != 0) {
-                ImageProcessingUtils.rotateBitmap(spec.rawBitmap, spec.rotationDegrees)
+                ImageProcessingUtils.rotateBitmap(source, spec.rotationDegrees)
             } else {
-                spec.rawBitmap
+                source
             }
 
-            val rawPath = fileManager.saveBitmapToFile(rotatedRaw, prefix = "raw_${docId}_p$index")
+            val rawForDisk = if (fullBitmap != null) spec.rawBitmap else rotatedRaw
+            val rawPath = fileManager.saveBitmapToFile(rawForDisk, prefix = "raw_${docId}_p$index")
 
             // Process image: warp perspective + apply filter & adjustments
             val warped = ImageProcessingUtils.warpPerspective(rotatedRaw, spec.corners)
@@ -96,6 +115,12 @@ class DocumentRepository(
                 contrast = spec.contrast
             )
             val procPath = fileManager.saveBitmapToFile(filtered, prefix = "proc_${docId}_p$index")
+
+            // Liberar lo que creamos en este paso (los bitmaps del llamador no se tocan).
+            if (filtered !== warped) filtered.recycle()
+            if (warped !== rotatedRaw) warped.recycle()
+            if (rotatedRaw !== source) rotatedRaw.recycle()
+            fullBitmap?.recycle()
 
             if (firstThumbnailPath == null) {
                 firstThumbnailPath = procPath
