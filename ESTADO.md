@@ -5,7 +5,7 @@ Resumen técnico para retomar el desarrollo. No incluye credenciales de firma (e
 - **App**: DocuScan — escáner con detección de bordes, filtros, OCR (ML Kit latino), PDF y exportación.
 - **Paquete**: `com.aistudio.docuscan.knrvpx` · namespace `com.example`
 - **SDK**: minSdk 24 · compile/target 36.1 · AGP 9.1.1 · Gradle 9.6.0 · Kotlin 2.2.10
-- **Versión**: 1.15 (versionCode 16)
+- **Versión**: 1.16 (versionCode 17)
 
 ## Compilar
 ```bash
@@ -31,6 +31,12 @@ El PDF **no** es buscable: no se dibuja texto, solo el bitmap.
 - Lupa que **sigue al punto** y se coloca encima del dedo (a un costado si no cabe arriba), nunca debajo.
 - Arrastre anclado al punto de apoyo (`onDragStart` guarda dedo + esquina), no por deltas acumulados: el punto acompaña al dedo 1:1.
 - Papelera en la barra: borra la página actual y vuelve a la anterior; si era la única, sale del editor.
+
+## PDF y memoria
+- El PDF se escribe con `pdf/PdfWriter.kt` (JPEG DCTDecode), **no** con `android.graphics.pdf.PdfDocument`: ese rasteriza a ~320 dpi y mete PNG de 2,2 MB por hoja (13 MB un documento de 6 páginas).
+- `PdfQuality` fija dpi y calidad JPEG (220/88, 170/80, 130/70). Un documento de 6 páginas queda en ~1,4 MB.
+- Las fotos se decodifican reducidas a 2200 px (`ImageProcessingUtils.decodeForWork`); las miniaturas del editor se generan a 128 px. Sin eso, 6 páginas de 12 MP dejaban el heap nativo en 374 MB.
+- Test: `./gradlew testDebugUnitTest --tests com.example.pdf.PdfWriterTest` valida cabecera `%PDF`, xref, páginas, imágenes y marca de agua.
 
 ## Plantilla carnet
 - En el diálogo de guardado, `PageLayout` permite **Carnet**: junta las imágenes de dos en dos en una hoja (frente arriba, reverso abajo, etiquetas FRENTE/REVERSO y línea separadora).
