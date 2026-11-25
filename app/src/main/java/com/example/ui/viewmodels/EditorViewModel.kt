@@ -204,13 +204,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val input = app.contentResolver.openInputStream(uri)
                     val bytes = input?.use { it.readBytes() }
                     // Bitmap de trabajo reducido (el original se conserva en bytes para exportar).
-                    val bitmap = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
+                    val exifRotation = bytes?.let { com.example.imaging.ExifRotation.degreesFromJpeg(it) } ?: 0
+                    val decoded = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
+                    val bitmap = if (decoded != null && exifRotation != 0) {
+                        ImageProcessingUtils.rotateBitmap(decoded, exifRotation)
+                    } else decoded
                     if (bitmap != null) {
                         val detection = EdgeDetector.detectPaperEdges(bitmap)
                         newDrafts.add(
                             DraftPage(
                                 rawBitmap = bitmap,
                                 sourceJpeg = bytes,
+                                sourceRotation = exifRotation,
                                 corners = detection.corners,
                                 isAutoDetected = detection.isDocumentDetected,
                                 detectionMessage = detection.message
@@ -328,6 +333,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                             brightness = draft.brightness,
                             contrast = draft.contrast,
                             rotationDegrees = draft.rotation,
+                            sourceRotation = draft.sourceRotation,
                             // Con el JPEG original el PDF sale desde la foto completa, no desde
                             // el bitmap de trabajo de 2200 px.
                             rawJpeg = draft.sourceJpeg

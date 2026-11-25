@@ -26,6 +26,8 @@ data class DocumentPageSpec(
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val rotationDegrees: Int = 0,
+    /** Grados que hay que girar el JPEG original (EXIF del archivo o sensor) antes de recortar. */
+    val sourceRotation: Int = 0,
     /**
      * JPEG original cuando se dispone de él. Si viene, el procesado (recorte + filtro) se hace
      * desde la foto completa y `rawBitmap` solo se guarda como original para re-editar.
@@ -97,8 +99,11 @@ class DocumentRepository(
             }
             val source = fullBitmap ?: spec.rawBitmap
 
-            val rotatedRaw = if (spec.rotationDegrees != 0) {
-                ImageProcessingUtils.rotateBitmap(source, spec.rotationDegrees)
+            // La rotación manual del editor y la del archivo/sensor se suman: el JPEG original
+            // viene «como salió del sensor» y sin esto una foto vertical se guardaba apaisada.
+            val totalRotation = (((spec.rotationDegrees + spec.sourceRotation) % 360) + 360) % 360
+            val rotatedRaw = if (totalRotation != 0) {
+                ImageProcessingUtils.rotateBitmap(source, totalRotation)
             } else {
                 source
             }

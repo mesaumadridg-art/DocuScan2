@@ -15,6 +15,7 @@ import com.example.data.FileManager
 import com.example.data.PageEntity
 import com.example.imaging.DocumentFilter
 import com.example.imaging.EdgeDetector
+import com.example.imaging.ExifRotation
 import com.example.imaging.ImageProcessingUtils
 import com.example.imaging.QuadCorners
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,11 @@ data class DraftPage(
      * el bitmap de trabajo pierde detalle y hasta ahora el PDF salía limitado por él.
      */
     val sourceJpeg: ByteArray? = null,
+    /**
+     * Grados que hay que girar el JPEG original para verlo derecho (EXIF del archivo o rotación del
+     * sensor). El bitmap de trabajo ya viene girado; el original no.
+     */
+    val sourceRotation: Int = 0,
     val corners: QuadCorners,
     val filter: DocumentFilter = DocumentFilter.ORIGINAL,
     val brightness: Float = 0f,
@@ -101,7 +107,11 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 val buffer: ByteBuffer = imageProxy.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
-                val rotation = imageProxy.imageInfo.rotationDegrees
+                // Orientación: si el propio JPEG trae EXIF se usa esa (el archivo ya sabe cómo
+                // verse); si no, la que informa el sensor. Antes se usaba solo la del sensor y el
+                // PDF acababa con las fotos verticales de costado.
+                val exifRotation = ExifRotation.degreesFromJpeg(bytes)
+                val rotation = if (exifRotation != 0) exifRotation else imageProxy.imageInfo.rotationDegrees
 
                 // Se decodifica ya reducido (2200 px de lado mayor): la cámara entrega 12 MP y
                 // guardar seis así en memoria dejaba la app sin aire.
@@ -117,6 +127,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 val draft = DraftPage(
                     rawBitmap = bitmap,
                     sourceJpeg = bytes,
+                    sourceRotation = rotation,
                     corners = detection.corners,
                     isAutoDetected = detection.isDocumentDetected,
                     detectionMessage = detection.message
@@ -148,7 +159,13 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 try {
                     val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
                     val bytes = inputStream?.use { it.readBytes() }
-                    val bitmap = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
+                    // La cámara anota la orientación en el EXIF; BitmapFactory la ignora, así que
+                    // una foto vertical se decodificaba apaisada y el PDF la ponía de costado.
+                    val exifRotation = bytes?.let { ExifRotation.degreesFromJpeg(it) } ?: 0
+                    val decoded = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
+                    val bitmap = if (decoded != null && exifRotation != 0) {
+                        ImageProcessingUtils.rotateBitmap(decoded, exifRotation)
+                    } else decoded
 
                     if (bitmap != null) {
                         val detection = EdgeDetector.detectPaperEdges(bitmap)
@@ -156,6 +173,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                             DraftPage(
                                 rawBitmap = bitmap,
                                 sourceJpeg = bytes,
+                                sourceRotation = exifRotation,
                                 corners = detection.corners,
                                 isAutoDetected = detection.isDocumentDetected,
                                 detectionMessage = detection.message

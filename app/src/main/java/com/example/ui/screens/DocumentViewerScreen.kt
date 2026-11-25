@@ -97,6 +97,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** Tamaño en unidades que se leen de un vistazo: 980 KB, 1,9 MB. */
+fun pesoLegible(bytes: Long): String {
+    return when {
+        bytes >= 1_048_576 -> String.format(java.util.Locale.getDefault(), "%.1f MB", bytes / 1_048_576f)
+        bytes >= 1024 -> "${bytes / 1024} KB"
+        else -> "$bytes B"
+    }
+}
+
 @Composable
 fun DocumentViewerScreen(
     documentId: Long,
@@ -508,8 +517,18 @@ fun DocumentViewerScreen(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                    // Peso real del PDF en disco (se recalcula solo, File.length es barato).
+                    val pesoPdf = currentDoc.pdfPath?.let { ruta ->
+                        java.io.File(ruta).takeIf { it.exists() }?.length()
+                    }
                     Text(
-                        text = "${pages.size} ${if (pages.size == 1) "página" else "páginas"}",
+                        text = buildString {
+                            append("${pages.size} ${if (pages.size == 1) "página" else "páginas"}")
+                            if (pesoPdf != null && pesoPdf > 0) {
+                                append(" · ")
+                                append(pesoLegible(pesoPdf))
+                            }
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
