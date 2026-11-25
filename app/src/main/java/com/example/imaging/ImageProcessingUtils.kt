@@ -1,6 +1,7 @@
 package com.example.imaging
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
@@ -336,6 +337,45 @@ object ImageProcessingUtils {
             if (acc >= target) return (v + shift).toInt().coerceIn(24, 232)
         }
         return 128
+    }
+
+    /** Lado mayor máximo del bitmap de trabajo (cámara/galería). Suficiente para 200+ dpi. */
+    const val MAX_WORK_DIM = 2200
+
+    /**
+     * Decodifica un JPEG reduciendo de una vez (inSampleSize), en lugar de cargar 12 MP en RAM
+     * y reescalar después. Con seis páginas eso es la diferencia entre 290 MB y 70 MB de heap.
+     */
+    fun decodeForWork(bytes: ByteArray, maxDim: Int = MAX_WORK_DIM): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sample = 1
+        while (
+            bounds.outWidth / (sample * 2) >= maxDim / 2 &&
+            bounds.outHeight / (sample * 2) >= maxDim / 2
+        ) {
+            sample *= 2
+        }
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+        return fitToMax(decoded, maxDim)
+    }
+
+    /** Escala para que el lado mayor no pase de [maxDim]; no amplía y recicla el original si sobra. */
+    fun fitToMax(source: Bitmap, maxDim: Int = MAX_WORK_DIM): Bitmap {
+        val longest = maxOf(source.width, source.height)
+        if (longest <= maxDim) return source
+        val scale = maxDim.toFloat() / longest
+        val w = (source.width * scale).toInt().coerceAtLeast(1)
+        val h = (source.height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(source, w, h, true)
+        if (scaled !== source) source.recycle()
+        return scaled
     }
 
     /**

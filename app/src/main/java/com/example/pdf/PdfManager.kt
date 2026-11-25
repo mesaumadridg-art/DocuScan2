@@ -40,90 +40,94 @@ class PdfManager(
         config: PdfExportConfig,
         onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }
     ): File = withContext(Dispatchers.IO) {
-        val pdfDocument = PdfDocument()
         val total = pages.size
+        if (total == 0) throw IllegalArgumentException("El documento no tiene páginas")
 
-        try {
-            for ((index, page) in pages.withIndex()) {
-                onProgress(index + 1, total)
+        // Resolución objetivo: la hoja a la resolución elegida, con un mínimo razonable para
+        // que el texto siga legible aunque la foto de origen sea pequeña.
+        val encoded = ArrayList<PdfWriter.JpegPage>(total)
+        var firstW = 612
+        var firstH = 792
 
-                // Load processed image
-                val imageFile = File(page.processedImagePath)
-                if (!imageFile.exists()) continue
+        for ((index, page) in pages.withIndex()) {
+            onProgress(index + 1, total)
 
-                val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath) ?: continue
+            val imageFile = File(page.processedImagePath)
+            if (!imageFile.exists()) continue
 
-                // Determine target dimensions in PostScript points (1/72 inch)
-                val (baseWidth, baseHeight) = when (config.pageSize) {
-                    PdfPageSize.LETTER -> Pair(612, 792)     // 8.5 x 11 inches
-                    PdfPageSize.OFICIO -> Pair(612, 936)     // 8.5 x 13 inches (tradicional América Latina)
-                    PdfPageSize.LEGAL -> Pair(612, 1008)     // 8.5 x 14 inches
-                    PdfPageSize.FIT_PAGE -> {
-                        // Fit to bitmap aspect ratio with max dimension of 1000pt
-                        val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-                        if (aspect > 1f) Pair(842, (842 / aspect).toInt())
-                        else Pair((842 * aspect).toInt(), 842)
-                    }
-                    PdfPageSize.A4 -> Pair(595, 842)         // 210 x 297 mm
-                }
+            // Se decodifica ya reducido: no hace falta cargar 12 MP para dejar 2200 px en el PDF.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(imageFile.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) continue
 
-                val pageWidth = if (config.isLandscape) maxOf(baseWidth, baseHeight) else minOf(baseWidth, baseHeight)
-                val pageHeight = if (config.isLandscape) minOf(baseWidth, baseHeight) else maxOf(baseWidth, baseHeight)
-
-                val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
-                val pdfPage = pdfDocument.startPage(pageInfo)
-                val canvas = pdfPage.canvas
-
-                // Fill background with white
-                canvas.drawColor(Color.WHITE)
-
-                // Calculate aspect-fit destination rect
-                val imgWidth = bitmap.width
-                val imgHeight = bitmap.height
-                val imgAspect = imgWidth.toFloat() / imgHeight.toFloat()
-                val pageAspect = pageWidth.toFloat() / pageHeight.toFloat()
-
-                val dstRect = if (imgAspect > pageAspect) {
-                    // Fit to width
-                    val dstH = (pageWidth / imgAspect).toInt()
-                    val top = (pageHeight - dstH) / 2
-                    Rect(0, top, pageWidth, top + dstH)
+            val sheetW: Int
+            val sheetH: Int
+            if (config.pageSize == PdfPageSize.FIT_PAGE) {
+                val aspect = bounds.outWidth.toFloat() / bounds.outHeight.toFloat()
+                if (aspect > 1f) {
+                    sheetW = 842
+                    sheetH = (842 / aspect).toInt().coerceAtLeast(1)
                 } else {
-                    // Fit to height
-                    val dstW = (pageHeight * imgAspect).toInt()
-                    val left = (pageWidth - dstW) / 2
-                    Rect(left, 0, left + dstW, pageHeight)
+                    sheetW = (842 * aspect).toInt().coerceAtLeast(1)
+                    sheetH = 842
                 }
-
-                val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-                canvas.drawBitmap(bitmap, null, dstRect, paint)
-
-                // Draw Watermark if present
-                if (!config.watermarkText.isNullOrBlank()) {
-                    val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.argb(45, 12, 74, 96) // subtle petrol blue watermark
-                        textSize = (pageWidth / 10f).coerceAtLeast(32f)
-                        textAlign = Paint.Align.CENTER
-                        style = Paint.Style.FILL
-                    }
-                    canvas.save()
-                    canvas.rotate(-35f, pageWidth / 2f, pageHeight / 2f)
-                    canvas.drawText(config.watermarkText, pageWidth / 2f, pageHeight / 2f, wmPaint)
-                    canvas.restore()
+            } else {
+                val long = when (config.pageSize) {
+                    PdfPageSize.LETTER -> 792
+                    PdfPageSize.OFICIO -> 936
+                    PdfPageSize.LEGAL -> 1008
+                    PdfPageSize.A4 -> 842
+                    PdfPageSize.FIT_PAGE -> 792
                 }
-
-                pdfDocument.finishPage(pdfPage)
-                bitmap.recycle()
+                val short = when (config.pageSize) {
+                    PdfPageSize.LETTER, PdfPageSize.OFICIO, PdfPageSize.LEGAL -> 612
+                    PdfPageSize.A4 -> 595
+                    PdfPageSize.FIT_PAGE -> 612
+                }
+                if (config.isLandscape) {
+                    sheetW = long
+                    sheetH = short
+                } else {
+                    sheetW = short
+                    sheetH = long
+                }
+            }
+            if (index == 0) {
+                firstW = sheetW
+                firstH = sheetH
             }
 
-            val outputFile = fileManager.getNewPdfFile(config.title)
-            FileOutputStream(outputFile).use { out ->
-                pdfDocument.writeTo(out)
+            val targetLong = PdfWriter.targetLongestSide(sheetW, sheetH, config.quality.dpi)
+            var sample = 1
+            while (
+                bounds.outWidth / (sample * 2) >= targetLong / 2 ||
+                bounds.outHeight / (sample * 2) >= targetLong / 2
+            ) {
+                sample *= 2
             }
-            outputFile
-        } finally {
-            pdfDocument.close()
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = BitmapFactory.decodeFile(imageFile.absolutePath, opts) ?: continue
+            val scaled = PdfWriter.fitLongest(decoded, targetLong)
+            encoded.add(PdfWriter.encodeJpeg(scaled, config.quality.jpegQuality))
+            if (scaled !== decoded) scaled.recycle()
+            decoded.recycle()
         }
+
+        if (encoded.isEmpty()) throw IllegalStateException("No se pudo leer ninguna página")
+
+        val outputFile = fileManager.getNewPdfFile(config.title)
+        PdfWriter.write(
+            file = outputFile,
+            pages = encoded,
+            pageWidthPt = firstW,
+            pageHeightPt = firstH,
+            title = config.title,
+            watermarkText = config.watermarkText
+        )
+        outputFile
     }
 
     suspend fun mergePdfFiles(

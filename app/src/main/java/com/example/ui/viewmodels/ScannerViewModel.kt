@@ -97,7 +97,12 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                 buffer.get(bytes)
                 val rotation = imageProxy.imageInfo.rotationDegrees
 
-                var bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                // Se decodifica ya reducido (2200 px de lado mayor): la cámara entrega 12 MP y
+                // guardar seis así en memoria dejaba la app sin aire.
+                var bitmap = ImageProcessingUtils.decodeForWork(bytes) ?: run {
+                    withContext(Dispatchers.Main) { _isProcessingCapture.value = false }
+                    return@launch
+                }
                 if (rotation != 0) {
                     bitmap = ImageProcessingUtils.rotateBitmap(bitmap, rotation)
                 }
@@ -135,8 +140,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             for (uri in uris) {
                 try {
                     val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    inputStream?.close()
+                    val bytes = inputStream?.use { it.readBytes() }
+                    val bitmap = bytes?.let { ImageProcessingUtils.decodeForWork(it) }
 
                     if (bitmap != null) {
                         val detection = EdgeDetector.detectPaperEdges(bitmap)

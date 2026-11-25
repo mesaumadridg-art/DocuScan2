@@ -746,8 +746,22 @@ fun DocumentCropAndFilterScreen(
                                     .background(Color.DarkGray)
                                     .clickable { editorViewModel.selectPage(index) }
                             ) {
+                                // Miniatura reducida a 108x128 px: subir el bitmap completo de cada
+                                // página a la GPU multiplicaba la memoria por seis sin verse mejor.
+                                val thumb = remember(draft.id, draft.rotation) {
+                                    val src = draft.rawBitmap
+                                    val target = 128
+                                    val longest = maxOf(src.width, src.height)
+                                    val scale = if (longest > target) target.toFloat() / longest else 1f
+                                    android.graphics.Bitmap.createScaledBitmap(
+                                        src,
+                                        (src.width * scale).toInt().coerceAtLeast(1),
+                                        (src.height * scale).toInt().coerceAtLeast(1),
+                                        true
+                                    ).asImageBitmap()
+                                }
                                 Image(
-                                    bitmap = draft.rawBitmap.asImageBitmap(),
+                                    bitmap = thumb,
                                     contentDescription = "Página ${index + 1}",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()

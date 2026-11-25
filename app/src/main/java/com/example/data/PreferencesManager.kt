@@ -22,8 +22,11 @@ enum class PdfPageSize(val displayName: String, val subtitle: String) {
     A4("A4", "210 × 297 mm")
 }
 
-enum class PdfQuality(val compressionQuality: Int) {
-    HIGH(95), MEDIUM(80), LOW(60)
+enum class PdfQuality(val dpi: Int, val jpegQuality: Int) {
+    /** ~220 dpi, buena para leer e imprimir sin que el archivo se dispare. */
+    HIGH(220, 88),
+    MEDIUM(170, 80),
+    LOW(130, 70)
 }
 
 /**
