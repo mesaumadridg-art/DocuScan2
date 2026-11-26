@@ -77,9 +77,18 @@ object ImageProcessingUtils {
         Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
+    /**
+     * Recorta el cuadrilátero y lo endereza.
+     *
+     * [targetAspect] es la proporción de la hoja de salida (ancho/alto, por ejemplo 0,773 para
+     * carta vertical). Si el marco es casi una hoja, se estira hasta llenarla: sin esto el PDF
+     * conserva la proporción del marco que arrastró el usuario y deja franjas blancas arriba y
+     * abajo. El estirón se limita a ±20% para no deformar un recibo o una tarjeta.
+     */
     suspend fun warpPerspective(
         source: Bitmap,
-        corners: QuadCorners
+        corners: QuadCorners,
+        targetAspect: Float? = null
     ): Bitmap = withContext(Dispatchers.Default) {
         val w = source.width.toFloat()
         val h = source.height.toFloat()
@@ -97,7 +106,17 @@ object ImageProcessingUtils {
 
         val leftHeight = hypot((pBL.x - pTL.x).toDouble(), (pBL.y - pTL.y).toDouble())
         val rightHeight = hypot((pBR.x - pTR.x).toDouble(), (pBR.y - pTR.y).toDouble())
-        val targetHeight = max(leftHeight, rightHeight).toInt().coerceAtLeast(100)
+        var targetHeight = max(leftHeight, rightHeight).toInt().coerceAtLeast(100)
+
+        // Ajuste a la hoja: solo si el marco está en vertical (la hoja de salida también) y su
+        // proporción no se aleja más de un 20% de la del papel.
+        if (targetAspect != null && targetAspect > 0f && targetHeight > targetWidth * 1.05f) {
+            val actual = targetWidth.toFloat() / targetHeight
+            val factor = actual / targetAspect
+            if (factor in 0.80f..1.25f) {
+                targetHeight = (targetWidth / targetAspect).toInt().coerceAtLeast(100)
+            }
+        }
 
         val srcPoints = floatArrayOf(
             pTL.x, pTL.y,

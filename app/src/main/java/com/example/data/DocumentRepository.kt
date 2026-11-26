@@ -111,8 +111,15 @@ class DocumentRepository(
             val rawForDisk = if (fullBitmap != null) spec.rawBitmap else rotatedRaw
             val rawPath = fileManager.saveBitmapToFile(rawForDisk, prefix = "raw_${docId}_p$index")
 
+            // Proporción de la hoja de salida: si el marco es casi una hoja, se estira hasta
+            // llenarla y el PDF no queda con franjas blancas arriba y abajo. Con «Ajustar a foto»
+            // (0×0) se respeta la forma del recorte.
+            val pageAspect = if (pageSize.widthPt > 0f && pageSize.heightPt > 0f) {
+                pageSize.widthPt / pageSize.heightPt
+            } else null
+
             // Process image: warp perspective + apply filter & adjustments
-            val warped = ImageProcessingUtils.warpPerspective(rotatedRaw, spec.corners)
+            val warped = ImageProcessingUtils.warpPerspective(rotatedRaw, spec.corners, pageAspect)
             val filtered = ImageProcessingUtils.applyAdjustmentsAndFilter(
                 source = warped,
                 filter = spec.filter,

@@ -14,12 +14,18 @@ enum class ThemeMode {
     SYSTEM, LIGHT, DARK
 }
 
-enum class PdfPageSize(val displayName: String, val subtitle: String) {
-    LETTER("Carta", "8.5 × 11 in (216 × 279 mm)"),
-    OFICIO("Oficio", "8.5 × 13 in (216 × 330 mm)"),
-    LEGAL("Legal", "8.5 × 14 in (216 × 356 mm)"),
+enum class PdfPageSize(
+    val displayName: String,
+    val subtitle: String,
+    /** Tamaño de la hoja en puntos PDF (1/72 in). 0 = la hoja toma la forma de la foto. */
+    val widthPt: Float = 0f,
+    val heightPt: Float = 0f
+) {
+    LETTER("Carta", "8.5 × 11 in (216 × 279 mm)", 612f, 792f),
+    OFICIO("Oficio", "8.5 × 13 in (216 × 330 mm)", 612f, 936f),
+    LEGAL("Legal", "8.5 × 14 in (216 × 356 mm)", 612f, 1008f),
     FIT_PAGE("Ajustar a foto", "Sin márgenes blancos"),
-    A4("A4", "210 × 297 mm")
+    A4("A4", "210 × 297 mm", 595f, 842f)
 }
 
 enum class PdfQuality(val dpi: Int, val jpegQuality: Int) {
