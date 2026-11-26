@@ -44,10 +44,32 @@ object EdgeDetector {
     private const val MIN_AREA_RATIO = 0.06f
     private const val MIN_RECTANGULARITY = 0.72f
 
+    /**
+     * El modelo queda apagado: con seis fotos reales (hoja sobre el teclado del portátil) DocAligner
+     * marcaba el **bloque de texto** en vez del papel, con confianza alta (0.92-1.00) pero dejando
+     * fuera el pie y los márgenes. Un detector que se equivoca con seguridad es peor que uno que
+     * admite que no ve nada. Se deja el código y el modelo en assets para cuando haya un modelo
+     * entrenado con fotos de esta app.
+     */
+    private const val USAR_MODELO = false
+
     suspend fun detectPaperEdges(bitmap: Bitmap, maxDim: Int = MAX_DIM): DetectionResult =
         withContext(Dispatchers.Default) {
+            if (USAR_MODELO) {
+                val porRed = try {
+                    DocDetector.detect(bitmap)?.also {
+                        android.util.Log.i("EdgeDetector", "usa red: ${it.message}")
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+                if (porRed != null) return@withContext porRed
+            }
+
             try {
-                detect(bitmap, maxDim)
+                val geometrico = detect(bitmap, maxDim)
+                android.util.Log.i("EdgeDetector", "usa geometrico: ${geometrico.message}")
+                geometrico
             } catch (e: Exception) {
                 fallback("Ajusta las esquinas del documento a mano.")
             }
@@ -90,7 +112,11 @@ object EdgeDetector {
         }
 
         val refined = corners
-            ?: return fallback("No se reconoció el borde del papel. Arrastra las esquinas para ajustarlo.")
+            ?: return fallback(
+                "No se reconoció el borde del papel. Ajusta el marco propuesto.",
+                w,
+                h
+            )
 
         // Si el cuadrilátero ocupa casi todo el encuadre EN LOS DOS EJES no hay nada que recortar.
         // Ojo: exigir los dos. Una foto tomada cerca puede llenar el 95 % del ancho y sólo el
@@ -109,7 +135,8 @@ object EdgeDetector {
         val spanX = (maxX - minX) / w
         val spanY = (maxY - minY) / h
         if (spanX > 0.95f && spanY > 0.95f) {
-            return fallback("El documento ocupa casi todo el encuadre. Arrastra las esquinas si quieres ajustar el borde.")
+            // Aquí el marco detectado ya es la foto entera: no hay nada mejor que proponer.
+            return marcoCompleto("El documento ocupa casi todo el encuadre. Arrastra las esquinas si quieres ajustar el borde.")
         }
 
         val fw = w.toFloat()
@@ -156,8 +183,53 @@ object EdgeDetector {
         return if (isValidQuad(refined, total)) refined else null
     }
 
-    /** Marco completo: no recorta nada. */
-    private fun fallback(message: String) = DetectionResult(
+    /** Proporción de una hoja carta, que es el papel con el que se trabaja por defecto. */
+    private const val ASPECTO_HOJA = 0.7727f
+
+    private fun fallback(message: String, width: Int = 1, height: Int = 1) = DetectionResult(
+        corners = propuestaInicial(width, height),
+        isDocumentDetected = false,
+        message = message
+    )
+
+    /**
+     * Marco inicial cuando no se reconoce el papel: un rectángulo al 88 % del ancho con la
+     * proporción de una hoja, centrado.
+     *
+     * Antes, cuando el detector no encontraba nada, se devolvía la imagen completa y el usuario
+     * tenía que **dibujar** las cuatro esquinas desde cero. Con un marco ya puesto solo tiene que
+     * corregirlo, que es mucho menos trabajo y menos frustrante.
+     */
+    private fun propuestaInicial(width: Int, height: Int): QuadCorners {
+        if (width <= 0 || height <= 0) {
+            return QuadCorners(
+                topLeft = PointF(0f, 0f),
+                topRight = PointF(1f, 0f),
+                bottomRight = PointF(1f, 1f),
+                bottomLeft = PointF(0f, 1f)
+            )
+        }
+
+        val vertical = height >= width
+        // En coordenadas normalizadas el ancho y el alto no miden lo mismo: hay que convertir la
+        // proporción del papel a fracciones de esta imagen concreta.
+        val ancho = 0.88f
+        var alto = ancho * width / (ASPECTO_HOJA * height)
+        if (vertical && alto > 0.92f) {
+            alto = 0.92f
+            val anchoAjustado = alto * ASPECTO_HOJA * height / width
+            return centrado(anchoAjustado.coerceIn(0.2f, 0.98f), alto)
+        }
+        if (!vertical) {
+            // Foto apaisada: el marco se limita a la altura disponible.
+            alto = 0.88f * width / (ASPECTO_HOJA * height)
+            if (alto > 0.95f) alto = 0.95f
+        }
+        return centrado(ancho.coerceIn(0.2f, 0.98f), alto.coerceIn(0.2f, 0.98f))
+    }
+
+    /** Marco completo, sin recortar: para cuando no hay nada mejor que ofrecer. */
+    private fun marcoCompleto(message: String) = DetectionResult(
         corners = QuadCorners(
             topLeft = PointF(0f, 0f),
             topRight = PointF(1f, 0f),
@@ -167,6 +239,17 @@ object EdgeDetector {
         isDocumentDetected = false,
         message = message
     )
+
+    private fun centrado(ancho: Float, alto: Float): QuadCorners {
+        val x0 = (1f - ancho) / 2f
+        val y0 = (1f - alto) / 2f
+        return QuadCorners(
+            topLeft = PointF(x0, y0),
+            topRight = PointF(x0 + ancho, y0),
+            bottomRight = PointF(x0 + ancho, y0 + alto),
+            bottomLeft = PointF(x0, y0 + alto)
+        )
+    }
 
     // -------------------------------------------------------------------- imagen
 

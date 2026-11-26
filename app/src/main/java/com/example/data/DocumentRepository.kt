@@ -120,6 +120,15 @@ class DocumentRepository(
 
             // Process image: warp perspective + apply filter & adjustments
             val warped = ImageProcessingUtils.warpPerspective(rotatedRaw, spec.corners, pageAspect)
+            android.util.Log.i(
+                "DETALLE",
+                "p$index origen=${rotatedRaw.width}x${rotatedRaw.height} corners=" +
+                    "(${spec.corners.topLeft.x},${spec.corners.topLeft.y})" +
+                    "(${spec.corners.topRight.x},${spec.corners.topRight.y})" +
+                    "(${spec.corners.bottomRight.x},${spec.corners.bottomRight.y})" +
+                    "(${spec.corners.bottomLeft.x},${spec.corners.bottomLeft.y})" +
+                    " aspect=$pageAspect warp=${warped.width}x${warped.height}"
+            )
             val filtered = ImageProcessingUtils.applyAdjustmentsAndFilter(
                 source = warped,
                 filter = spec.filter,

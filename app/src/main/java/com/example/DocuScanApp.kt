@@ -17,6 +17,15 @@ class DocuScanApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // El modelo de detección se carga en segundo plano: son 4,7 MB desde assets y no debe
+        // retrasar el arranque de la app.
+        Thread({
+            try {
+                com.example.imaging.DocDetector.warmUp(this)
+            } catch (t: Throwable) {
+                // Si falla, la app sigue con el detector geométrico.
+            }
+        }, "doc-detector-warmup").start()
     }
 
     companion object {

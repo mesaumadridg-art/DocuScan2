@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.docuscan.knrvpx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 21
-    versionName = "1.20"
+    versionCode = 22
+    versionName = "1.21"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -37,6 +37,18 @@ android {
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
+    }
+  }
+
+  // Un APK por arquitectura: el runtime del detector (ONNX Runtime) pesa ~12 MB por ABI y no
+  // tiene sentido meter cuatro en el mismo archivo. El de arm64-v8a es el que usa casi todo el
+  // mundo; armeabi-v7a queda para equipos viejos y x86_64 para el emulador.
+  splits {
+    abi {
+      isEnable = true
+      reset()
+      include("arm64-v8a", "armeabi-v7a", "x86_64")
+      isUniversalApk = true
     }
   }
 
@@ -92,6 +104,8 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
+  // Detección de hoja por red neuronal (modelo ONNX de 4,7 MB en assets).
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
