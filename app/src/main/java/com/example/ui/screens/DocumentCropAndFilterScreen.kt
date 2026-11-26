@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Crop
@@ -648,6 +649,24 @@ fun DocumentCropAndFilterScreen(
                                 modifier = Modifier.weight(1f),
                                 onClick = { showAddPageDialog = true }
                             )
+                        }
+                        // Escape cuando "Auto" devuelve un marco que corta el papel: recupera el
+                        // marco razonable en vez de arrastrar cuatro esquinas desde uno malo.
+                        TextButton(
+                            onClick = { editorViewModel.proposeInitialCorners() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp)
+                                .testTag("propose_frame_button")
+                        ) {
+                            Icon(
+                                Icons.Default.CropFree,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFB0C4CE)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Volver al marco propuesto", fontSize = 12.sp, color = Color(0xFFB0C4CE))
                         }
                         if (editorViewModel.pages.value.size > 1) {
                             // Un solo ajuste para todas: sin esto, veinte hojas son veinte encuadres.

@@ -122,6 +122,26 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         updateCurrentPreview()
     }
 
+    /**
+     * Vuelve al marco propuesto (88 % del ancho, proporción de hoja).
+     *
+     * Sirve de escape cuando "Auto" devuelve un marco que corta el papel: en vez de arrastrar cuatro
+     * esquinas desde un recorte malo, se recupera uno razonable y solo se corrige lo que falte.
+     */
+    fun proposeInitialCorners() {
+        val idx = _currentPageIndex.value
+        val list = _pages.value.toMutableList()
+        if (idx !in list.indices) return
+        val bmp = list[idx].rawBitmap
+        list[idx] = list[idx].copy(
+            corners = EdgeDetector.marcoPropuesto(bmp.width, bmp.height),
+            isAutoDetected = false,
+            detectionMessage = "Marco propuesto · ajusta las esquinas"
+        )
+        _pages.value = list
+        updateCurrentPreview()
+    }
+
     fun resetCornersToFull() {
         updateCurrentCorners(
             QuadCorners(

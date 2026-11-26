@@ -25,7 +25,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -37,16 +36,25 @@ private data class DrawRect(val w: Float, val h: Float, val x: Float, val y: Flo
     fun toScreen(p: PointF) = Offset(x + p.x * w, y + p.y * h)
 }
 
-private fun fitRect(bitmap: Bitmap, canvas: Size): DrawRect {
+/**
+ * Rectángulo donde se dibuja la imagen dentro del canvas (ajuste por aspecto).
+ *
+ * [inset] deja un margen alrededor: sin él la imagen toca los bordes del área y una esquina en la
+ * posición 0 o 1 queda pegada al borde de la pantalla (o debajo del panel de herramientas), donde
+ * el dedo no llega. Con 18 dp de margen las cuatro esquinas siempre son alcanzables.
+ */
+private fun fitRect(bitmap: Bitmap, canvas: Size, inset: Float = 0f): DrawRect {
     if (canvas.width <= 0f || canvas.height <= 0f) return DrawRect(0f, 0f, 0f, 0f)
+    val disponibleW = (canvas.width - inset * 2f).coerceAtLeast(1f)
+    val disponibleH = (canvas.height - inset * 2f).coerceAtLeast(1f)
     val bmpAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-    val canvasAspect = canvas.width / canvas.height
+    val canvasAspect = disponibleW / disponibleH
     return if (bmpAspect > canvasAspect) {
-        val h = canvas.width / bmpAspect
-        DrawRect(canvas.width, h, 0f, (canvas.height - h) / 2f)
+        val h = disponibleW / bmpAspect
+        DrawRect(disponibleW, h, inset, inset + (disponibleH - h) / 2f)
     } else {
-        val w = canvas.height * bmpAspect
-        DrawRect(w, canvas.height, (canvas.width - w) / 2f, 0f)
+        val w = disponibleH * bmpAspect
+        DrawRect(w, disponibleH, inset + (disponibleW - w) / 2f, inset)
     }
 }
 
@@ -61,7 +69,6 @@ fun InteractiveCropCanvas(
     modifier: Modifier = Modifier
 ) {
     var activeCorner by remember { mutableStateOf<Int?>(null) } // 0: TL, 1: TR, 2: BR, 3: BL
-    var containerSize by remember { mutableStateOf(Size.Zero) }
 
     // Punto donde se apoyó el dedo y posición de la esquina en ese instante.
     // El arrastre se mide contra este origen fijo: el punto sigue al dedo 1:1 y no depende
@@ -85,25 +92,34 @@ fun InteractiveCropCanvas(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { containerSize = Size(it.width.toFloat(), it.height.toFloat()) }
             .pointerInput(bitmap) {
                 detectDragGestures(
                     onDragStart = { offset ->
-                        if (containerSize.width <= 0f || containerSize.height <= 0f) return@detectDragGestures
-                        val rect = fitRect(currentBitmap, containerSize)
+                        // El tamaño se toma del propio nodo (size del PointerInputScope) y no de un
+                        // estado aparte: si el panel cambia de alto, el estado puede ir un frame por
+                        // detrás y el toque caía donde la imagen ya no estaba. Eso se notaba sobre
+                        // todo abajo, donde el desfase se acumula.
+                        val area = Size(size.width.toFloat(), size.height.toFloat())
+                        if (area.width <= 0f || area.height <= 0f) return@detectDragGestures
+                        val rect = fitRect(currentBitmap, area, 18.dp.toPx())
                         val c = currentCorners
-                        val touchRadius = 64.dp.toPx()
-                        fun near(p: PointF) = hypot(offset.x - rect.toScreen(p).x, offset.y - rect.toScreen(p).y) < touchRadius
+                        val touchRadius = 72.dp.toPx()
 
-                        val elegida = when {
-                            near(c.topLeft) -> 0
-                            near(c.topRight) -> 1
-                            near(c.bottomRight) -> 2
-                            near(c.bottomLeft) -> 3
-                            else -> null
+                        // Antes se probaba en orden TL, TR, BR, BL y ganaba la primera que estuviera
+                        // dentro del radio: con el marco estrecho, tocar abajo agarraba la de arriba
+                        // y la lupa enseñaba otra zona. Ahora gana la más cercana al dedo.
+                        val candidatos = listOf(
+                            0 to c.topLeft,
+                            1 to c.topRight,
+                            2 to c.bottomRight,
+                            3 to c.bottomLeft
+                        ).map { (i, p) ->
+                            val s = rect.toScreen(p)
+                            i to hypot(offset.x - s.x, offset.y - s.y)
                         }
-                        activeCorner = elegida
-                        if (elegida != null) {
+                        val (elegida, distancia) = candidatos.minBy { it.second }
+                        activeCorner = if (distancia < touchRadius) elegida else null
+                        if (activeCorner != null) {
                             dragOrigin = offset
                             cornerOrigin = pointOf(c, elegida)
                         }
@@ -112,7 +128,11 @@ fun InteractiveCropCanvas(
                         val corner = activeCorner ?: return@detectDragGestures
                         change.consume()
 
-                        val rect = fitRect(currentBitmap, containerSize)
+                        val rect = fitRect(
+                            currentBitmap,
+                            Size(size.width.toFloat(), size.height.toFloat()),
+                            18.dp.toPx()
+                        )
                         if (rect.w <= 0f || rect.h <= 0f) return@detectDragGestures
 
                         // Desplazamiento TOTAL del dedo desde que apoyó (no el delta del evento):
@@ -159,7 +179,7 @@ fun InteractiveCropCanvas(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val canvasW = size.width
             val canvasH = size.height
-            val rect = fitRect(bitmap, size)
+            val rect = fitRect(bitmap, size, 18.dp.toPx())
 
             // 1. Imagen
             drawImage(
@@ -236,8 +256,14 @@ fun InteractiveCropCanvas(
                 cx = cx.coerceIn(radius + borde, (canvasW - radius - borde).coerceAtLeast(radius + borde))
                 cy = cy.coerceIn(radius + borde, (canvasH - radius - borde).coerceAtLeast(radius + borde))
 
+                // Zoom fijo de 3x. Antes el recorte era el 14 % del ancho del bitmap, una cifra que
+                // no tiene relacion con lo que se ve en pantalla: con imagenes grandes la "lupa"
+                // abarcaba una zona enorme y el punto quedaba perdido dentro de ella. Ahora el lado
+                // del recorte sale del radio en pantalla y de la escala real de la imagen.
+                val zoom = 3f
+                val escala = if (rect.w > 0f) rect.w / bitmap.width else 1f
                 val maxSide = minOf(bitmap.width, bitmap.height).toFloat()
-                val side = (bitmap.width * 0.14f).coerceIn(24f, maxSide)
+                val side = ((radius * 2f) / zoom / escala).coerceIn(16f, maxSide)
                 val srcX = (pt.x - rect.x) / rect.w * bitmap.width
                 val srcY = (pt.y - rect.y) / rect.h * bitmap.height
                 val sx = (srcX - side / 2f).coerceIn(0f, (bitmap.width - side).coerceAtLeast(0f))

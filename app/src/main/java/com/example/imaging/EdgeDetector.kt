@@ -200,6 +200,9 @@ object EdgeDetector {
      * tenía que **dibujar** las cuatro esquinas desde cero. Con un marco ya puesto solo tiene que
      * corregirlo, que es mucho menos trabajo y menos frustrante.
      */
+    /** Marco propuesto al 88 % con proporción de hoja, expuesto para que la pantalla pueda ofrecerlo. */
+    fun marcoPropuesto(width: Int, height: Int): QuadCorners = propuestaInicial(width, height)
+
     private fun propuestaInicial(width: Int, height: Int): QuadCorners {
         if (width <= 0 || height <= 0) {
             return QuadCorners(
