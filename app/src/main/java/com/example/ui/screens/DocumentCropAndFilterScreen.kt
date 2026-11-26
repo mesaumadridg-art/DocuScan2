@@ -576,9 +576,13 @@ fun DocumentCropAndFilterScreen(
                     InteractiveCropCanvas(
                         bitmap = currentPage.rawBitmap,
                         corners = currentPage.corners,
+                        // Mientras el dedo arrastra solo se mueven las esquinas: recalcular el
+                        // recorte completo en cada evento es lo que hacía que el punto fuera a
+                        // tirones y que la lupa no siguiera al dedo.
                         onCornersChanged = { updatedCorners ->
-                            editorViewModel.updateCurrentCorners(updatedCorners)
-                        }
+                            editorViewModel.updateCurrentCorners(updatedCorners, refreshPreview = false)
+                        },
+                        onDragFinished = { editorViewModel.refreshCurrentPreview() }
                     )
                 }
 

@@ -66,7 +66,9 @@ fun InteractiveCropCanvas(
     bitmap: Bitmap,
     corners: QuadCorners,
     onCornersChanged: (QuadCorners) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Se llama al soltar el dedo: la pantalla aprovecha para recalcular la vista previa una sola vez. */
+    onDragFinished: () -> Unit = {}
 ) {
     var activeCorner by remember { mutableStateOf<Int?>(null) } // 0: TL, 1: TR, 2: BR, 3: BL
 
@@ -169,8 +171,14 @@ fun InteractiveCropCanvas(
                         }
                         onCornersChanged(updated)
                     },
-                    onDragEnd = { activeCorner = null },
-                    onDragCancel = { activeCorner = null }
+                    onDragEnd = {
+                        activeCorner = null
+                        onDragFinished()
+                    },
+                    onDragCancel = {
+                        activeCorner = null
+                        onDragFinished()
+                    }
                 )
             }
     ) {

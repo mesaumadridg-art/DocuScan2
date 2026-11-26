@@ -20,6 +20,7 @@ import com.example.imaging.QuadCorners
 import com.example.ocr.OcrManager
 import com.example.pdf.PdfManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,15 +74,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updateCurrentCorners(corners: QuadCorners) {
+    /**
+     * Mueve las esquinas.
+     *
+     * [refreshPreview] va en false mientras el dedo arrastra: recalcular la vista previa implica un
+     * `warpPerspective` de la imagen completa, y hacerlo en cada evento (decenas por segundo) satura
+     * la CPU y hace que el punto vaya a tirones y la lupa no siga al dedo. Se recalcula al soltar.
+     */
+    fun updateCurrentCorners(corners: QuadCorners, refreshPreview: Boolean = true) {
         val idx = _currentPageIndex.value
         val list = _pages.value.toMutableList()
         if (idx in list.indices) {
             list[idx] = list[idx].copy(corners = corners)
             _pages.value = list
-            updateCurrentPreview()
+            if (refreshPreview) updateCurrentPreview()
         }
     }
+
+    /** Recalcula la vista previa al terminar de arrastrar. */
+    fun refreshCurrentPreview() = updateCurrentPreview()
 
     fun autoDetectCurrentEdges() {
         val idx = _currentPageIndex.value
@@ -281,6 +292,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private var previewJob: Job? = null
+
     private fun updateCurrentPreview() {
         val idx = _currentPageIndex.value
         val list = _pages.value
@@ -290,7 +303,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val draft = list[idx]
-        viewModelScope.launch(Dispatchers.Default) {
+        // Se cancela el cálculo anterior: si no, al mover el filtro o el brillo se acumulan warps
+        // y gana el último que termine, que puede no ser el de la posición actual.
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch(Dispatchers.Default) {
             try {
                 val rotated = if (draft.rotation != 0) {
                     ImageProcessingUtils.rotateBitmap(draft.rawBitmap, draft.rotation)
