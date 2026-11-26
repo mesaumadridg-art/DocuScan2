@@ -98,6 +98,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Copia el encuadre de la página visible a todas las demás.
+     *
+     * Escanear veinte hojas y corregir veinte encuadres a mano no es viable; si las fotos se tomaron
+     * en la misma posición basta ajustar una. Las esquinas están normalizadas (0-1), así que sirven
+     * aunque las fotos tengan distinto tamaño; solo hay que cuidar que estén en la misma orientación.
+     */
+    fun applyCornersToAllPages() {
+        val idx = _currentPageIndex.value
+        val list = _pages.value
+        if (idx !in list.indices || list.size < 2) return
+        val referencia = list[idx].corners
+        _pages.value = list.mapIndexed { i, draft ->
+            if (i == idx) draft else draft.copy(
+                corners = referencia,
+                isAutoDetected = false,
+                detectionMessage = "Encuadre copiado de la página ${idx + 1}"
+            )
+        }
+        updateCurrentPreview()
+    }
+
     fun resetCornersToFull() {
         updateCurrentCorners(
             QuadCorners(

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Crop
@@ -647,6 +648,29 @@ fun DocumentCropAndFilterScreen(
                                 modifier = Modifier.weight(1f),
                                 onClick = { showAddPageDialog = true }
                             )
+                        }
+                        if (editorViewModel.pages.value.size > 1) {
+                            // Un solo ajuste para todas: sin esto, veinte hojas son veinte encuadres.
+                            TextButton(
+                                onClick = { editorViewModel.applyCornersToAllPages() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                                    .testTag("apply_corners_all_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF64DFDF)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Usar este encuadre en las ${editorViewModel.pages.value.size} páginas",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64DFDF)
+                                )
+                            }
                         }
                     }
 
