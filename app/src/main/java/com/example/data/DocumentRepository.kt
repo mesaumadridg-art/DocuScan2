@@ -11,6 +11,7 @@ import com.example.pdf.PdfExportConfig
 import com.example.pdf.PdfManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,7 +40,12 @@ class DocumentRepository(
     private val database: DocuScanDatabase,
     private val fileManager: FileManager,
     private val pdfManager: PdfManager,
-    private val ocrManager: OcrManager
+    private val ocrManager: OcrManager,
+    /**
+     * Hace falta aquí porque el PDF se genera al guardar: sin leer la calidad elegida, la opción
+     * "B/N mínimo" de Ajustes no tenía efecto y todo salía en color a 220 dpi.
+     */
+    private val preferencesManager: PreferencesManager
 ) {
     private val docDao = database.documentDao()
     private val pageDao = database.pageDao()
@@ -168,7 +174,11 @@ class DocumentRepository(
         // Generate initial PDF immediately
         val pdfFile = pdfManager.createPdfFromPages(
             pages = pageEntities,
-            config = PdfExportConfig(title = safeTitle, pageSize = pageSize)
+            config = PdfExportConfig(
+                title = safeTitle,
+                pageSize = pageSize,
+                quality = preferencesManager.preferencesFlow.first().defaultQuality
+            )
         )
 
         // Update document with thumbnail, pageCount, pdfPath
@@ -359,7 +369,11 @@ class DocumentRepository(
         // Re-generate PDF
         val pdfFile = pdfManager.createPdfFromPages(
             pages = pages,
-            config = PdfExportConfig(title = doc.title, pageSize = pageSize)
+            config = PdfExportConfig(
+                title = doc.title,
+                pageSize = pageSize,
+                quality = preferencesManager.preferencesFlow.first().defaultQuality
+            )
         )
 
         val fullOcr = pages.mapNotNull { it.ocrText }.joinToString("\n\n").trim()

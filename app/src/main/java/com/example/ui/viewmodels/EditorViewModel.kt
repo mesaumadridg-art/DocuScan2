@@ -34,11 +34,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val fileManager = FileManager(application)
     private val pdfManager = PdfManager(application, fileManager)
     private val ocrManager = OcrManager(application)
+    val preferencesManager = (application as DocuScanApp).preferencesManager
     val repository = DocumentRepository(
         database = (application as DocuScanApp).database,
         fileManager = fileManager,
         pdfManager = pdfManager,
-        ocrManager = ocrManager
+        ocrManager = ocrManager,
+        preferencesManager = preferencesManager
     )
 
     private val _pages = MutableStateFlow<List<DraftPage>>(emptyList())

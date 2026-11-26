@@ -51,7 +51,8 @@ class DocuScanViewModel(application: Application) : AndroidViewModel(application
         database = (application as DocuScanApp).database,
         fileManager = fileManager,
         pdfManager = pdfManager,
-        ocrManager = ocrManager
+        ocrManager = ocrManager,
+        preferencesManager = preferencesManager
     )
 
     private val _searchQuery = MutableStateFlow("")
@@ -356,7 +357,14 @@ class DocuScanViewModel(application: Application) : AndroidViewModel(application
         val pages = repository.getPagesList(document.id)
         if (pages.isEmpty()) return null
         val defaultSize = userPreferences.value.defaultPageSize
-        val newFile = pdfManager.createPdfFromPages(pages, PdfExportConfig(title = document.title, pageSize = defaultSize))
+        val newFile = pdfManager.createPdfFromPages(
+            pages,
+            PdfExportConfig(
+                title = document.title,
+                pageSize = defaultSize,
+                quality = userPreferences.value.defaultQuality
+            )
+        )
         repository.refreshDocumentPdfAndMetadata(document.id, defaultSize)
         return newFile
     }

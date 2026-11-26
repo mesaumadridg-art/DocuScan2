@@ -20,7 +20,11 @@ object PdfWriter {
     data class JpegPage(
         val jpeg: ByteArray,
         val pxWidth: Int,
-        val pxHeight: Int
+        val pxHeight: Int,
+        /** `DCTDecode` para JPEG; `FlateDecode` para blanco y negro de 1 bit. */
+        val filter: String = "DCTDecode",
+        val colorSpace: String = "DeviceRGB",
+        val bitsPerComponent: Int = 8
     )
 
     private const val PAGE_DPI_REF = 72f
@@ -167,7 +171,8 @@ object PdfWriter {
             streamObj(
                 objs.image,
                 "/Type /XObject /Subtype /Image /Width ${jpegPage.pxWidth} /Height ${jpegPage.pxHeight} " +
-                    "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode",
+                    "/ColorSpace /${jpegPage.colorSpace} /BitsPerComponent ${jpegPage.bitsPerComponent} " +
+                    "/Filter /${jpegPage.filter}",
                 jpegPage.jpeg
             )
         }
@@ -194,6 +199,149 @@ object PdfWriter {
         val bos = ByteArrayOutputStream()
         source.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(40, 95), bos)
         return JpegPage(bos.toByteArray(), source.width, source.height)
+    }
+
+    /**
+     * Convierte la página a **blanco y negro puro de 1 bit** y la comprime con Deflate.
+     *
+     * Un documento de texto en color a 220 dpi pesa ~520 KB por página, y cincuenta hojas serían
+     * 26 MB. En 1 bit con zlib baja a ~40-50 KB por página: cincuenta hojas, ~2 MB, con el texto
+     * igual de legible. Es el mismo truco que usan los escáneres de oficina (allí con CCITT G4).
+     *
+     * El umbral es local (Bradley): compara cada píxel con la media de su entorno, así una sombra
+     * suave o un papel amarillento no se comen el texto. Después se limpian los puntos sueltos, que
+     * es lo que deja el ruido del sensor al binarizar.
+     *
+     * Ojo: se pierde el color. Para documentos con sellos, firmas a color o gráficos, usar JPEG.
+     */
+    fun encodeMonochrome(source: Bitmap): JpegPage {
+        val w = source.width
+        val h = source.height
+        val pixels = IntArray(w * h)
+        source.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        // Luminancia en un byte por píxel: los Int de color ocupan cuatro veces más y no hacen falta.
+        val gray = ByteArray(w * h)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            val r = (c shr 16) and 0xFF
+            val g = (c shr 8) and 0xFF
+            val b = c and 0xFF
+            gray[i] = ((r * 299 + g * 587 + b * 114) / 1000).toByte()
+        }
+
+        // Suavizado 5x5 antes de umbralizar. No es cosmetico: con una foto real, sin este paso el
+        // ruido del sensor parte las letras finas y el texto sale ilegible; con el, se lee entero.
+        // Se hace como dos pasadas separables (horizontal y vertical) para no pagar 9 lecturas por pixel.
+        val horizontal = IntArray(w * h)
+        for (y in 0 until h) {
+            val base = y * w
+            for (x in 0 until w) {
+                var suma = 0
+                var n = 0
+                for (dx in -2..2) {
+                    val nx = x + dx
+                    if (nx in 0 until w) {
+                        suma += gray[base + nx].toInt() and 0xFF
+                        n++
+                    }
+                }
+                horizontal[base + x] = suma / n
+            }
+        }
+        val suave = IntArray(w * h)
+        for (x in 0 until w) {
+            for (y in 0 until h) {
+                var suma = 0
+                var n = 0
+                for (dy in -2..2) {
+                    val ny = y + dy
+                    if (ny in 0 until h) {
+                        suma += horizontal[ny * w + x]
+                        n++
+                    }
+                }
+                suave[y * w + x] = suma / n
+            }
+        }
+        horizontal.fill(0)
+
+        // Imagen integral para calcular la media de cualquier ventana en tiempo constante.
+        val stride = w + 1
+        val integral = IntArray(stride * (h + 1))
+        for (y in 1..h) {
+            var fila = 0
+            val base = y * stride
+            val prev = (y - 1) * stride
+            val filaGray = (y - 1) * w
+            for (x in 1..w) {
+                fila += suave[filaGray + x - 1]
+                integral[base + x] = integral[prev + x] + fila
+            }
+        }
+
+        val radio = maxOf(10, w / 32)
+        val negro = BooleanArray(w * h)
+        for (y in 0 until h) {
+            val y0 = maxOf(0, y - radio)
+            val y1 = minOf(h, y + radio + 1)
+            val baseY0 = y0 * stride
+            val baseY1 = y1 * stride
+            val filaGray = y * w
+            for (x in 0 until w) {
+                val x0 = maxOf(0, x - radio)
+                val x1 = minOf(w, x + radio + 1)
+                val suma = integral[baseY1 + x1] - integral[baseY0 + x1] -
+                    integral[baseY1 + x0] + integral[baseY0 + x0]
+                val cuenta = (y1 - y0) * (x1 - x0)
+                // 0.88 en lugar de 1.0: el texto queda un poco más grueso y no se rompen las letras finas.
+                // Sin piso de fondo a proposito: descartar las zonas oscuras borraba tambien las
+                // cabeceras negras con texto blanco (tablas), que es informacion del documento.
+                negro[filaGray + x] = suave[filaGray + x] * cuenta < suma * 0.88f
+            }
+        }
+        pixels.fill(0)
+
+        // Sin despeckle: la limpieza de puntos sueltos tambien borraba los extremos de los trazos
+        // finos y dejaba las letras partidas. El suavizado 5x5 ya quita casi todo el ruido del sensor,
+        // y las motas que sobreviven no molestan a la lectura.
+        val limpio = negro
+
+        // Empaquetado: 1 bit por píxel, bit alto primero, 1 = blanco y 0 = negro (lo que espera
+        // DeviceGray de 1 bit). Las filas se rellenan hasta el byte completo.
+        val rowBytes = (w + 7) / 8
+        val raw = ByteArray(rowBytes * h) { 0xFF.toByte() }
+        for (y in 0 until h) {
+            val base = y * rowBytes
+            val filaBits = y * w
+            for (x in 0 until w) {
+                if (limpio[filaBits + x]) {
+                    val idx = base + (x shr 3)
+                    raw[idx] = (raw[idx].toInt() and (0x7F ushr (x and 7)).inv()).toByte()
+                }
+            }
+        }
+
+        val deflater = java.util.zip.Deflater(java.util.zip.Deflater.BEST_COMPRESSION)
+        deflater.setInput(raw)
+        deflater.finish()
+        val salida = ByteArrayOutputStream(raw.size / 4 + 64)
+        val buffer = ByteArray(64 * 1024)
+        while (!deflater.finished()) {
+            val n = deflater.deflate(buffer)
+            if (n <= 0) break
+            salida.write(buffer, 0, n)
+        }
+        deflater.end()
+
+        return JpegPage(
+            jpeg = salida.toByteArray(),
+            pxWidth = w,
+            pxHeight = h,
+            filter = "FlateDecode",
+            colorSpace = "DeviceGray",
+            bitsPerComponent = 1
+        )
     }
 
     /** Escala un bitmap para que su lado mayor no supere [maxLongest]; no amplía. */

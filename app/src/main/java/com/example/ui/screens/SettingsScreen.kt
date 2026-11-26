@@ -227,6 +227,24 @@ fun SettingsScreen(
                             label = { Text("Ligera (60%)") }
                         )
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = preferences.defaultQuality == PdfQuality.MONO,
+                            onClick = { viewModel.setDefaultQuality(PdfQuality.MONO) },
+                            label = { Text("B/N mínimo") }
+                        )
+                    }
+                    Text(
+                        "Blanco y negro de 1 bit: una página de texto pasa de ~520 KB a ~25 KB, y " +
+                            "cincuenta hojas caben en poco más de 1 MB. Exige que la hoja tenga buena " +
+                            "resolución: si la foto la toma de lejos, el texto pequeño puede quedar roto. " +
+                            "No conviene para sellos, firmas a color ni gráficos.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7A8C96)
+                    )
                 }
             }
         }

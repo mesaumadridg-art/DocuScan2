@@ -28,11 +28,34 @@ enum class PdfPageSize(
     A4("A4", "210 × 297 mm", 595f, 842f)
 }
 
-enum class PdfQuality(val dpi: Int, val jpegQuality: Int) {
+enum class PdfQuality(
+    val dpi: Int,
+    val jpegQuality: Int,
+    /** Blanco y negro de 1 bit comprimido con Deflate: ~10 veces menos peso, sin color. */
+    val monochrome: Boolean = false
+) {
     /** ~220 dpi, buena para leer e imprimir sin que el archivo se dispare. */
     HIGH(220, 88),
     MEDIUM(170, 80),
-    LOW(130, 70)
+    LOW(130, 70),
+
+    /**
+     * Texto en blanco y negro puro. Una página que pesa ~520 KB en color baja a ~25-40 KB, así que
+     * cincuenta hojas pasan de 26 MB a poco más de 1 MB.
+     *
+     * Tiene un límite medido: al binarizar no hay grises que suavicen, así que necesita ~200 dpi
+     * reales sobre la hoja. Con fotos donde la hoja ocupa un cuarto del encuadre, el recorte queda
+     * en ~148 dpi y el texto pequeño se rompe. Sirve para escanear de cerca, no para fotos lejanas.
+     */
+    MONO(220, 0, monochrome = true);
+
+    val displayName: String
+        get() = when (this) {
+            HIGH -> "Alta"
+            MEDIUM -> "Media"
+            LOW -> "Ligera"
+            MONO -> "B/N mínimo"
+        }
 }
 
 /**

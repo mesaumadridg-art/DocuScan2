@@ -111,7 +111,13 @@ class PdfManager(
             }
             val decoded = BitmapFactory.decodeFile(imageFile.absolutePath, opts) ?: continue
             val scaled = PdfWriter.fitLongest(decoded, targetLong)
-            encoded.add(PdfWriter.encodeJpeg(scaled, config.quality.jpegQuality))
+            encoded.add(
+                if (config.quality.monochrome) {
+                    PdfWriter.encodeMonochrome(scaled)
+                } else {
+                    PdfWriter.encodeJpeg(scaled, config.quality.jpegQuality)
+                }
+            )
             if (scaled !== decoded) scaled.recycle()
             decoded.recycle()
         }
